@@ -24,6 +24,19 @@ Maintained infrastructure forks exist as support repositories, but they are not 
 - [`homie-esp8266`](https://github.com/labodj/homie-esp8266)
 - [`async-mqtt-client`](https://github.com/labodj/async-mqtt-client)
 
+## Hardware Notes
+
+The hardware side is now documented separately in [`HARDWARE_OVERVIEW.md`](./HARDWARE_OVERVIEW.md).
+
+That page covers:
+
+- the Controllino Maxi + ESP32 panel pattern used in the live installation
+- the 12/24 V supply and 5 V buck conversion path for the bridge
+- the TTL serial connection with 3.3 V / 5 V level shifting
+- the low-voltage button and indicator wiring model
+- the controller-local versus bridge/network responsibility split
+- practical maintenance choices such as connectorized controller-to-bridge links and external USB extensions for ESP32 flashing
+
 ## Early Build
 
 These WIP photos are from 2019, during the original house renovation and early electrical panel work. They are not polished beauty shots, but they make the project history much more concrete than a clean architecture diagram alone.
@@ -44,6 +57,14 @@ These WIP photos are from 2019, during the original house renovation and early e
 </p>
 
 Panel progress during one of the early integration phases.
+
+## Current Installation Snapshot
+
+This is a current closed-panel snapshot from the live installation. It shows the public hardware pattern more clearly than the early build photos: a Controllino Maxi paired with an internal ESP32 bridge, solid controller-to-bridge wiring, and external USB extensions kept available for bridge firmware maintenance.
+
+<p>
+  <img src="./assets/photos/current-panel-overview.jpg" alt="Current electrical panel snapshot with Controllino Maxi, internal ESP32 bridge and external USB service leads" width="48%">
+</p>
 
 ## Runtime Architecture
 
