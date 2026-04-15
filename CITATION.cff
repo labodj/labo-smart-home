@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use or reference Labo Smart Home, please cite it using the metadata below."
+title: "Labo Smart Home"
+type: software
+authors:
+  - family-names: "Labardi"
+    given-names: "Jacopo"
+repository-code: "https://github.com/labodj/labo-smart-home"
+url: "https://github.com/labodj/labo-smart-home"
+license: "Apache-2.0"
+abstract: "Public landing repository for the Labo Smart Home ecosystem, including architecture, release map and repository overview."
+keywords:
+  - smart-home
+  - home-automation
+  - mqtt
+  - node-red
+  - esp32
+  - controllino
+  - lsh
