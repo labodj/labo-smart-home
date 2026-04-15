@@ -12,33 +12,54 @@ This repository is the public entry point for the LSH ecosystem. Its goal is sim
 
 The public side of LSH is intentionally split into reusable building blocks.
 
-| Repository | Role | Latest public release |
-| --- | --- | --- |
-| [`lsh-core`](https://github.com/labodj/lsh-core) | Arduino / Controllino runtime for the wired controller side | [`v1.1.0`](https://github.com/labodj/lsh-core/releases/tag/v1.1.0) |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge) | ESP32 bridge runtime between serial LSH, MQTT and Homie | [`v1.0.1`](https://github.com/labodj/lsh-bridge/releases/tag/v1.0.1) |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED | [`v1.5.0`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.5.0) |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol) | Shared wire protocol spec, generators and golden payloads | [`v1.0.0`](https://github.com/labodj/lsh-protocol/releases/tag/v1.0.0) |
+| Repository                                                                           | Role                                                        | Latest public release                                                                |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v1.1.0`](https://github.com/labodj/lsh-core/releases/tag/v1.1.0)                   |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.0.1`](https://github.com/labodj/lsh-bridge/releases/tag/v1.0.1)                 |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.5.0`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.5.0) |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [`v1.0.0`](https://github.com/labodj/lsh-protocol/releases/tag/v1.0.0)               |
 
 Maintained infrastructure forks exist as support repositories, but they are not the main public entry point of the project:
 
 - [`homie-esp8266`](https://github.com/labodj/homie-esp8266)
 - [`async-mqtt-client`](https://github.com/labodj/async-mqtt-client)
 
+## Early Build
+
+These WIP photos are from 2019, during the original house renovation and early electrical panel work. They are not polished beauty shots, but they make the project history much more concrete than a clean architecture diagram alone.
+
+<table>
+  <tr>
+    <td width="50%"><img src="./assets/photos/early-build-cable-bundle.jpg" alt="Early 2019 wiring stage with cable bundle and controller boards"></td>
+    <td width="50%"><img src="./assets/photos/early-build-controllino-closeup.jpg" alt="Early Controllino installation close-up inside wall box"></td>
+  </tr>
+  <tr>
+    <td>Early wiring stage while bringing multiple cable runs into the automation stack.</td>
+    <td>One of the early Controllino-based installs during integration and bring-up.</td>
+  </tr>
+</table>
+
+<p>
+  <img src="./assets/photos/early-build-panel-progress.jpg" alt="Electrical panel work in progress with breakers and controller hardware" width="48%">
+</p>
+
+Panel progress during one of the early integration phases.
+
 ## Runtime Architecture
 
-```mermaid
-flowchart LR
-    CORE[lsh-core\nControllino / Arduino runtime]
-    BRIDGE[lsh-bridge\nESP32 serial to MQTT bridge]
-    MQTT[MQTT broker]
-    LOGIC[node-red-contrib-lsh-logic\ncentral orchestration]
-    HA[Home Assistant]
-
-    CORE <--> BRIDGE
-    BRIDGE <--> MQTT
-    MQTT <--> LOGIC
-    LOGIC <--> HA
+```text
++------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
+| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| node-red-contrib-lsh-logic|---->| Home Assistant |
+| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration             |     | UI / entities  |
++------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
 ```
+
+| Repository                   | Runtime responsibility                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `lsh-core`                   | Wired controller runtime: physical I/O, local logic, compact payloads        |
+| `lsh-bridge`                 | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model          |
+| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, discovery, distributed logic      |
+| `lsh-protocol`               | Shared wire contract: command IDs, compact keys, generators, golden payloads |
 
 Practical boundary summary:
 
