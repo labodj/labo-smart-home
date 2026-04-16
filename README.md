@@ -14,10 +14,10 @@ The public side of LSH is intentionally split into reusable building blocks.
 
 | Repository                                                                           | Role                                                        | Latest public release                                                                |
 | ------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v1.1.0`](https://github.com/labodj/lsh-core/releases/tag/v1.1.0)                   |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.0.1`](https://github.com/labodj/lsh-bridge/releases/tag/v1.0.1)                 |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.5.0`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.5.0) |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [`v1.0.0`](https://github.com/labodj/lsh-protocol/releases/tag/v1.0.0)               |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v1.1.1`](https://github.com/labodj/lsh-core/releases/tag/v1.1.1)                   |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.0.2`](https://github.com/labodj/lsh-bridge/releases/tag/v1.0.2)                 |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.5.2`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.5.2) |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [`v1.0.1`](https://github.com/labodj/lsh-protocol/releases/tag/v1.0.1)               |
 
 Maintained infrastructure forks exist as support repositories, but they are not the main public entry point of the project:
 
@@ -78,15 +78,15 @@ This is a current closed-panel snapshot from the live installation. It shows the
 | Repository                   | Runtime responsibility                                                       |
 | ---------------------------- | ---------------------------------------------------------------------------- |
 | `lsh-core`                   | Wired controller runtime: physical I/O, local logic, compact payloads        |
-| `lsh-bridge`                 | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model          |
-| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, discovery, distributed logic      |
+| `lsh-bridge`                 | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model, cached snapshot replay |
+| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, startup recovery, distributed logic |
 | `lsh-protocol`               | Shared wire contract: command IDs, compact keys, generators, golden payloads |
 
 Practical boundary summary:
 
 - `lsh-core` owns wired I/O, device topology, local click handling and compact payload encoding.
-- `lsh-bridge` owns the serial handshake, MQTT transport, Homie exposure and bridge-side state synchronization.
-- `node-red-contrib-lsh-logic` owns registry state, watchdog logic, discovery and distributed click orchestration.
+- `lsh-bridge` owns the serial handshake, MQTT transport, Homie exposure, cached snapshot replay and bridge-side state synchronization.
+- `node-red-contrib-lsh-logic` owns registry state, watchdog logic, startup recovery, discovery and distributed click orchestration.
 - `lsh-protocol` keeps command IDs, compact keys, compatibility metadata and generated artifacts aligned across the stack.
 
 ## Why The Split Exists
