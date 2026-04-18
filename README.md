@@ -16,7 +16,7 @@ The public side of LSH is intentionally split into reusable building blocks.
 | ------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v1.2.0`](https://github.com/labodj/lsh-core/releases/tag/v1.2.0)                   |
 | [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.1.0`](https://github.com/labodj/lsh-bridge/releases/tag/v1.1.0)                 |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.5.2`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.5.2) |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.6.0`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.6.0) |
 | [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [`v1.0.2`](https://github.com/labodj/lsh-protocol/releases/tag/v1.0.2)               |
 
 Maintained infrastructure forks exist as support repositories, but they are not the main public entry point of the project:
