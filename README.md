@@ -14,9 +14,9 @@ The public side of LSH is intentionally split into reusable building blocks.
 
 | Repository                                                                           | Role                                                        | Latest public release                                                                |
 | ------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v2.1.0`](https://github.com/labodj/lsh-core/releases/tag/v2.1.0)                   |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.2.0`](https://github.com/labodj/lsh-bridge/releases/tag/v1.2.0)                 |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.6.0`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.6.0) |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [`v2.1.1`](https://github.com/labodj/lsh-core/releases/tag/v2.1.1)                   |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [`v1.2.1`](https://github.com/labodj/lsh-bridge/releases/tag/v1.2.1)                 |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [`v1.6.1`](https://github.com/labodj/node-red-contrib-lsh-logic/releases/tag/v1.6.1) |
 | [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [`v1.1.0`](https://github.com/labodj/lsh-protocol/releases/tag/v1.1.0)               |
 
 Maintained infrastructure forks exist as support repositories, but they are not the main public entry point of the project:
@@ -75,12 +75,12 @@ This is a current closed-panel snapshot from the live installation. It shows the
 +------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
 ```
 
-| Repository                   | Runtime responsibility                                                       |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `lsh-core`                   | Wired controller runtime: physical I/O, local logic, compact payloads        |
+| Repository                   | Runtime responsibility                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `lsh-core`                   | Wired controller runtime: physical I/O, local logic, compact payloads                       |
 | `lsh-bridge`                 | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model, cached snapshot replay |
-| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, startup recovery, distributed logic |
-| `lsh-protocol`               | Shared wire contract: command IDs, compact keys, generators, golden payloads |
+| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, startup recovery, distributed logic              |
+| `lsh-protocol`               | Shared wire contract: command IDs, compact keys, generators, golden payloads                |
 
 Practical boundary summary:
 
