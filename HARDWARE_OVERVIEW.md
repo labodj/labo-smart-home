@@ -122,21 +122,13 @@ That decision pushed the software architecture toward:
 - Homie as the device model exposed by the bridge
 - stronger validation and test coverage on the higher-level orchestration logic
 
-## Public Boundary
-
-This repository documents the hardware pattern at a system level, but some installation-specific details remain private.
-
-Examples of intentionally private information:
-
-- room-by-room wiring maps
-- exact panel assignments for the live house
-- hostnames, Wi-Fi details, broker addresses and deployment secrets
-- site-specific controller composition and naming
-
-That boundary is deliberate. The goal is to document the engineering choices without publishing private building-level details.
-
 ## Related Repositories
 
+- [`GLOSSARY.md`](./GLOSSARY.md): shared terms used across the public stack
+- [`GETTING_STARTED.md`](./GETTING_STARTED.md): quickest practical bring-up path
+- [`FAQ.md`](./FAQ.md): short answers to common adoption questions
+- [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md): symptom-based diagnosis during first bring-up
+- [`REFERENCE_STACK.md`](./REFERENCE_STACK.md): public reference MQTT/Homie/Node-RED profile and repository boundaries
 - [`lsh-core`](https://github.com/labodj/lsh-core): Controllino-side runtime and compact field model
 - [`lsh-bridge`](https://github.com/labodj/lsh-bridge): ESP32 bridge runtime, MQTT transport and Homie integration
 - [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic): central orchestration, registry and watchdog logic

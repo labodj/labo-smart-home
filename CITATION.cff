@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/labodj/labo-smart-home"
 url: "https://github.com/labodj/labo-smart-home"
 license: "Apache-2.0"
-abstract: "Public landing repository for the Labo Smart Home ecosystem, including architecture, release map and repository overview."
+abstract: "Public documentation hub for the Labo Smart Home ecosystem, including architecture, onboarding guides and repository map."
 keywords:
   - smart-home
   - home-automation
