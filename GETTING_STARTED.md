@@ -75,6 +75,10 @@ For the reference electrical pattern used by the current examples:
 
 For the exact panel pattern, read [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md).
 
+For the controller firmware, start from `lsh-core` `v3.0.0` or newer. The
+documented configuration path is TOML-based: device topology lives in
+`lsh_devices.toml`, and PlatformIO runs a pre-build generator before compiling.
+
 ## Non-Negotiables For The First Bring-Up
 
 Most failed first bring-ups come from one of these mismatches:
@@ -142,6 +146,8 @@ If you are still deciding whether to adopt the stack at all, add
 Open:
 
 - [`lsh-core/examples/multi-device-project/platformio.ini`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/platformio.ini)
+- [`lsh-core/examples/multi-device-project/lsh_devices.toml`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/lsh_devices.toml)
+- [`lsh-core/examples/multi-device-project/README.md`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/README.md)
 
 Use it as the baseline for your controller bring-up.
 
@@ -153,6 +159,16 @@ Important example profiles:
 If you want the simplest first controller test, start from the leaner profile
 and only add distributed click logic after the base controller/bridge link is
 healthy.
+
+The first useful controller-only command is:
+
+```bash
+platformio run -d examples/multi-device-project -e J1_release
+```
+
+When adapting the example, edit `lsh_devices.toml` first. Keep the generated
+headers and `platformio.ini` layout close to the public example until the first
+device builds, publishes details, and reports actuator state.
 
 ### Step 3. Start from the bridge example
 
@@ -225,6 +241,8 @@ Before you customize anything, decide:
 - Do you want JSON first for observability, or MsgPack first for compactness?
 - Do you need only local controller logic, or distributed click orchestration too?
 - Are you evaluating the stack, or already shaping a deployment?
+- Are you changing one variable at a time, or changing hardware, topics, codecs
+  and device names in the same pass?
 
 Those answers tell you how much of the stack to adopt immediately.
 

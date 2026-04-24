@@ -94,6 +94,12 @@ Then only dive into the repo that matches your immediate goal:
 - `node-red-contrib-lsh-logic` for orchestration
 - `lsh-protocol` for exact contract details
 
+For the controller side, current `lsh-core` profiles are configured from TOML.
+You describe relays, buttons, indicators, IDs, pins and click behavior in
+`lsh_devices.toml`; the generator emits the C++ profile. You still need to
+understand your hardware and build environment, but you should not need to write
+device topology code by hand for a typical controller.
+
 ## What still works when Wi-Fi, MQTT or Node-RED is down?
 
 Controller-local behavior.
@@ -167,6 +173,9 @@ Not forever, but close enough for the first bring-up.
 The public examples exist to remove ambiguity. The fastest way to get a wrong
 result is to change codec, topics, device names and timing assumptions before
 the stock path works once end to end.
+
+The intended workflow is: make the example build, make one real device behave,
+then customize names, topology and distributed logic in small steps.
 
 ## What is the fastest honest way to evaluate LSH?
 

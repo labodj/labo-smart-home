@@ -20,6 +20,31 @@ simple: explain the overall architecture, link the public repositories, and
 make the project understandable without forcing visitors to reconstruct the
 whole system from four separate codebases.
 
+## What LSH Is
+
+LSH is for installations where wired field control matters: wall buttons,
+relays, indicator LEDs, predictable local behavior and explicit integration
+with the network layer.
+
+The public stack is built around a practical split:
+
+- controllers keep local inputs and outputs usable even when the network is
+  unavailable
+- ESP32 bridges expose controller state and commands over MQTT/Homie
+- Node-RED owns distributed logic that needs a system-wide view
+- the protocol repository keeps the wire contract explicit and generated
+
+## What LSH Is Not
+
+LSH is not a generic plug-and-play smart-home product and it is not trying to
+replace Home Assistant. It is also not the shortest path for someone who only
+wants a few Wi-Fi bulbs.
+
+It is a documented, reusable automation stack for people who are comfortable
+owning their electrical design, firmware builds and runtime services. The
+project aims to make that path clear and repeatable, not to hide the engineering
+decisions involved.
+
 ## Public Scope
 
 The public side of LSH is intentionally split into reusable building blocks.
@@ -77,6 +102,11 @@ If you want a fast, honest evaluation before going deep:
 
 That path is usually enough to decide whether LSH matches your mental model,
 your hardware constraints and your preferred tooling.
+
+Since `lsh-core` `v3.0.0`, controller topology is configured from TOML and
+compiled into optimized static profiles. A new adopter edits
+`lsh_devices.toml`; a typical device profile does not require C++ topology code
+or hand-maintained actuator ID lookup tables.
 
 If you want the operational version of that path, with the alignment checklist
 for codecs, topics, baud rates and example assets, read
@@ -196,6 +226,10 @@ If you want to understand the project quickly, this is the shortest path:
 7. Read [`lsh-bridge`](https://github.com/labodj/lsh-bridge) to see how the serial side is exposed over MQTT and Homie.
 8. Read [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) for the orchestration layer.
 9. Read [`lsh-protocol`](https://github.com/labodj/lsh-protocol) if you want the exact shared payload contract.
+
+If you are evaluating for adoption, resist changing topic names, codecs and
+device names all at once. Keep the public examples close to stock for the first
+successful run, then customize one layer at a time.
 
 ## Public History
 
