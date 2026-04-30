@@ -12,8 +12,8 @@ Home Assistant instead of trapping everything inside one opaque box.
 The current reference installation is built around **six Controllino Maxi PLCs**
 connected to **ESP32 Wi-Fi bridges**. The controllers handle the physical I/O
 and local logic, the bridges expose the runtime over **MQTT** with a **Homie**
-device model, and a central **Node-RED** component orchestrates discovery,
-health monitoring and distributed automation logic.
+device model. Central orchestration can then run either as a **Node-RED** node
+or as a standalone **Node.js coordinator** for headless deployments.
 
 This repository is the public entry point for the LSH ecosystem. Its goal is
 simple: explain the overall architecture, link the public repositories, and
@@ -31,7 +31,8 @@ The public stack is built around a practical split:
 - controllers keep local inputs and outputs usable even when the network is
   unavailable
 - ESP32 bridges expose controller state and commands over MQTT/Homie
-- Node-RED owns distributed logic that needs a system-wide view
+- a central coordinator owns distributed logic that needs a system-wide view
+- Node-RED can host that coordinator when you want a visual automation surface
 - the protocol repository keeps the wire contract explicit and generated
 
 ## What LSH Is Not
@@ -49,15 +50,17 @@ decisions involved.
 
 The public side of LSH is intentionally split into reusable building blocks.
 
-| Repository                                                                           | Role                                                        | Latest public release                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Arduino / Controllino runtime for the wired controller side | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-core?display_name=tag&sort=semver)](https://github.com/labodj/lsh-core/releases/latest)                                     |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge runtime between serial LSH, MQTT and Homie     | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-bridge?display_name=tag&sort=semver)](https://github.com/labodj/lsh-bridge/releases/latest)                                 |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration node for Node-RED                     | [![GitHub Release](https://img.shields.io/github/v/release/labodj/node-red-contrib-lsh-logic?display_name=tag&sort=semver)](https://github.com/labodj/node-red-contrib-lsh-logic/releases/latest) |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared wire protocol spec, generators and golden payloads   | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-protocol?display_name=tag&sort=semver)](https://github.com/labodj/lsh-protocol/releases/latest)                             |
+| Repository                                                                             | Role                                                          | Latest public release                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Arduino / Controllino runtime for the wired controller side   | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-core?display_name=tag&sort=semver)](https://github.com/labodj/lsh-core/releases/latest)                                     |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge runtime between serial LSH, MQTT and Homie       | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-bridge?display_name=tag&sort=semver)](https://github.com/labodj/lsh-bridge/releases/latest)                                 |
+| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Standalone orchestration runtime for CLI and Node.js services | [![npm](https://img.shields.io/npm/v/labo-smart-home-coordinator.svg)](https://www.npmjs.com/package/labo-smart-home-coordinator)                                                                 |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the coordinator runtime               | [![GitHub Release](https://img.shields.io/github/v/release/labodj/node-red-contrib-lsh-logic?display_name=tag&sort=semver)](https://github.com/labodj/node-red-contrib-lsh-logic/releases/latest) |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared wire protocol spec, generators and golden payloads     | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-protocol?display_name=tag&sort=semver)](https://github.com/labodj/lsh-protocol/releases/latest)                             |
 
-The release links above always follow each repository's GitHub `releases/latest`
-target, and the badges resolve the current published tag dynamically.
+The release links above follow each repository's public release channel. GitHub
+repositories use `releases/latest`; npm packages use the current npm `latest`
+dist-tag.
 
 Maintained infrastructure forks exist as support repositories, but they are not the main public entry point of the project:
 
@@ -72,7 +75,7 @@ developers:
 - **Local-first behavior**: buttons, relays and indicators keep making sense even when Wi-Fi or the broker is having a bad day.
 - **Clear boundaries**: controller, bridge, orchestration and protocol are separate on purpose, so each part stays understandable and reusable.
 - **No mystery contract**: the payload model is explicit, versioned and generated from one shared source of truth.
-- **Familiar building blocks**: PlatformIO, MQTT, Homie, Node-RED and Home Assistant make the stack approachable instead of exotic.
+- **Familiar building blocks**: PlatformIO, MQTT, Homie, Node.js, Node-RED and Home Assistant make the stack approachable instead of exotic.
 - **Real-world shape**: this is not a toy demo; the public repos reflect a system that has already been forced to survive real electrical panels, real timing constraints and real maintenance needs.
 
 ## Choose Your Entry Point
@@ -87,7 +90,8 @@ Different readers usually need different starting points:
 - If you want symptom-based help during bring-up, read [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md).
 - If you want to build the controller-side firmware, jump to [`lsh-core`](https://github.com/labodj/lsh-core).
 - If you want the ESP32 serial-to-MQTT bridge, jump to [`lsh-bridge`](https://github.com/labodj/lsh-bridge).
-- If you want the central orchestration layer, jump to [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic).
+- If you want a headless central orchestration process or embeddable Node.js library, jump to [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator).
+- If you want the same orchestration layer inside Node-RED, jump to [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic).
 - If you want the exact wire contract, jump to [`lsh-protocol`](https://github.com/labodj/lsh-protocol).
 
 ## Evaluate LSH In 15 Minutes
@@ -98,7 +102,7 @@ If you want a fast, honest evaluation before going deep:
 2. Skim [`HARDWARE_OVERVIEW.md`](./HARDWARE_OVERVIEW.md) to see the real controller + bridge pattern.
 3. Open the [`lsh-core` multi-device example](https://github.com/labodj/lsh-core/tree/main/examples/multi-device-project) to see how a controller is composed.
 4. Open the [`lsh-bridge` basic example](https://github.com/labodj/lsh-bridge/tree/main/examples/basic-homie-bridge) to see how the bridge is embedded.
-5. Open the [`node-red-contrib-lsh-logic` examples](https://github.com/labodj/node-red-contrib-lsh-logic/tree/main/examples) to see the expected `system-config.json` and flow shape.
+5. Open [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) if you prefer a CLI/library runtime, or the [`node-red-contrib-lsh-logic` examples](https://github.com/labodj/node-red-contrib-lsh-logic/tree/main/examples) if you want the Node-RED wrapper and flow shape.
 
 That path is usually enough to decide whether LSH matches your mental model,
 your hardware constraints and your preferred tooling.
@@ -165,18 +169,19 @@ This is a current closed-panel snapshot from the live installation. It shows the
 ## Runtime Architecture
 
 ```text
-+------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
-| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| node-red-contrib-lsh-logic|---->| Home Assistant |
-| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration             |     | UI / entities  |
-+------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
++------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
+| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| coordinator / Node-RED node |---->| Home Assistant |
+| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration               |     | UI / entities  |
++------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
 ```
 
-| Repository                   | Runtime responsibility                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `lsh-core`                   | Wired controller runtime: physical I/O, local logic, compact payloads                       |
-| `lsh-bridge`                 | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model, cached snapshot replay |
-| `node-red-contrib-lsh-logic` | Central orchestration: registry, watchdog, startup recovery, distributed logic              |
-| `lsh-protocol`               | Shared wire contract: command IDs, compact keys, generators, golden payloads                |
+| Repository                    | Runtime responsibility                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `lsh-core`                    | Wired controller runtime: physical I/O, local logic, compact payloads                       |
+| `lsh-bridge`                  | ESP32 bridge runtime: serial handshake, MQTT transport, Homie model, cached snapshot replay |
+| `labo-smart-home-coordinator` | Central orchestration: registry, watchdog, startup recovery, distributed logic              |
+| `node-red-contrib-lsh-logic`  | Node-RED wrapper for the coordinator runtime and visual-flow integration                    |
+| `lsh-protocol`                | Shared wire contract: command IDs, compact keys, generators, golden payloads                |
 
 For the concrete public MQTT/Homie/Node-RED profile that ties those roles
 together, read [`REFERENCE_STACK.md`](./REFERENCE_STACK.md).
@@ -185,7 +190,8 @@ Practical boundary summary:
 
 - `lsh-core` owns wired I/O, device topology, local click handling and compact payload encoding.
 - `lsh-bridge` owns the serial handshake, MQTT transport, Homie exposure, cached snapshot replay and bridge-side state synchronization.
-- `node-red-contrib-lsh-logic` owns registry state, watchdog logic, startup recovery, discovery and distributed click orchestration.
+- `labo-smart-home-coordinator` owns registry state, watchdog logic, startup recovery and distributed click orchestration.
+- `node-red-contrib-lsh-logic` hosts that coordinator inside Node-RED and exposes the expected outputs, status and editor UI.
 - `lsh-protocol` keeps command IDs, compact keys, compatibility metadata and generated artifacts aligned across the stack.
 
 ## Why The Split Exists
@@ -197,7 +203,8 @@ The earliest versions were much more monolithic, and a lot of the automation log
 - a reusable controller runtime instead of a one-off firmware tree
 - a reusable ESP32 bridge runtime instead of a tightly coupled bridge project
 - a standalone protocol source of truth instead of implicit duplicated constants
-- a tested TypeScript Node-RED node instead of increasingly fragile visual flow logic
+- a standalone TypeScript coordinator instead of increasingly fragile visual flow logic
+- a thin Node-RED wrapper for users who want the same runtime inside a visual tool
 
 That split is intentional. Each public repository has one clear job, one clear
 audience and one clear documentation surface. The result is easier adoption,
@@ -224,8 +231,9 @@ If you want to understand the project quickly, this is the shortest path:
 5. Keep [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) nearby once you start wiring or exchanging real traffic.
 6. Read [`lsh-core`](https://github.com/labodj/lsh-core) to understand the controller-side runtime model.
 7. Read [`lsh-bridge`](https://github.com/labodj/lsh-bridge) to see how the serial side is exposed over MQTT and Homie.
-8. Read [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) for the orchestration layer.
-9. Read [`lsh-protocol`](https://github.com/labodj/lsh-protocol) if you want the exact shared payload contract.
+8. Read [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) for the standalone orchestration layer.
+9. Read [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) if you want the Node-RED wrapper.
+10. Read [`lsh-protocol`](https://github.com/labodj/lsh-protocol) if you want the exact shared payload contract.
 
 If you are evaluating for adoption, resist changing topic names, codecs and
 device names all at once. Keep the public examples close to stock for the first

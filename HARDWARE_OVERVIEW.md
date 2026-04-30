@@ -102,7 +102,10 @@ The physical design mirrors the software boundary.
 
 - The **Controllino** remains the owner of the real inputs, relays, indicators and local click behavior.
 - The **ESP32 bridge** is responsible for serial transport, Wi-Fi connectivity, MQTT exposure and Homie integration.
-- The central **Node-RED** logic coordinates distributed behavior across panels, but it does not replace the controller-side local model.
+- The central **coordinator** coordinates distributed behavior across panels.
+  It can run headlessly through `labo-smart-home-coordinator` or inside
+  Node-RED through `node-red-contrib-lsh-logic`, but it does not replace the
+  controller-side local model.
 
 This matters operationally: local device behavior should remain coherent even when Wi-Fi, MQTT or the central logic node are unavailable. The network augments the installation; it does not define the basic electrical behavior of the panel.
 
@@ -118,7 +121,7 @@ This hardware layout came from practical constraints rather than from trying to 
 That decision pushed the software architecture toward:
 
 - compact serial payloads between controller and bridge
-- MQTT as the transport layer between bridges and the central logic node
+- MQTT as the transport layer between bridges and the central coordinator
 - Homie as the device model exposed by the bridge
 - stronger validation and test coverage on the higher-level orchestration logic
 
@@ -131,5 +134,6 @@ That decision pushed the software architecture toward:
 - [`REFERENCE_STACK.md`](./REFERENCE_STACK.md): public reference MQTT/Homie/Node-RED profile and repository boundaries
 - [`lsh-core`](https://github.com/labodj/lsh-core): Controllino-side runtime and compact field model
 - [`lsh-bridge`](https://github.com/labodj/lsh-bridge): ESP32 bridge runtime, MQTT transport and Homie integration
-- [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic): central orchestration, registry and watchdog logic
+- [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator): standalone central orchestration, registry and watchdog logic
+- [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic): Node-RED wrapper for the coordinator runtime
 - [`lsh-protocol`](https://github.com/labodj/lsh-protocol): shared contract for the controller-to-bridge and stack-wide payload model

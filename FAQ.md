@@ -21,14 +21,15 @@ They are split by responsibility:
 
 - `lsh-core` is the controller-side runtime.
 - `lsh-bridge` exposes that runtime over MQTT and Homie.
-- `node-red-contrib-lsh-logic` adds central orchestration, startup recovery and
-  distributed click logic.
+- `labo-smart-home-coordinator` adds central orchestration, startup recovery and
+  distributed click logic as a standalone CLI/library package.
+- `node-red-contrib-lsh-logic` wraps that coordinator for Node-RED users.
 - `lsh-protocol` keeps the shared payload contract aligned across the stack.
 
 If you only want to study or reuse one layer, you can start there. If you want
 the full public reference behavior, you eventually need all four.
 
-## Why is LSH split across four repositories?
+## Why is LSH split across several repositories?
 
 Because each layer has a different job, different constraints and a different
 audience.
@@ -48,13 +49,18 @@ monolithic automation repo.
 Not for the lowest layer.
 
 `lsh-core` plus `lsh-bridge` already gives you a controller + MQTT path. You
-add `node-red-contrib-lsh-logic` when you want the public orchestration model:
+add orchestration when you want the public distributed runtime model:
 
 - startup recovery
 - distributed network clicks
 - device registry state
-- Home Assistant discovery shaping
 - central watchdog behavior
+
+Use [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator)
+when you want that runtime as a headless CLI process or embedded Node.js
+library. Use
+[`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)
+when you want the same runtime inside Node-RED.
 
 ## Do I need Home Assistant?
 
@@ -71,7 +77,7 @@ A practical adoption order is:
 
 1. controller and bridge first
 2. MQTT visibility second
-3. Node-RED orchestration third
+3. coordinator or Node-RED orchestration third
 4. Home Assistant shaping last
 
 That order keeps each layer testable before you add another one on top.
@@ -91,7 +97,8 @@ Then only dive into the repo that matches your immediate goal:
 
 - `lsh-core` for controller firmware
 - `lsh-bridge` for ESP32 bridge integration
-- `node-red-contrib-lsh-logic` for orchestration
+- `labo-smart-home-coordinator` for headless orchestration
+- `node-red-contrib-lsh-logic` for Node-RED orchestration
 - `lsh-protocol` for exact contract details
 
 For the controller side, current `lsh-core` profiles are configured from TOML.
@@ -133,8 +140,8 @@ The higher layers are intentionally cleaner than that:
 
 - `lsh-protocol` is role-oriented, not Controllino-specific
 - `lsh-bridge` is an ESP32 bridge runtime
-- `node-red-contrib-lsh-logic` depends on the public MQTT/payload contract, not
-  on Controllino itself
+- `labo-smart-home-coordinator` and `node-red-contrib-lsh-logic` depend on the
+  public MQTT/payload contract, not on Controllino itself
 
 ## Should I start with JSON or MsgPack?
 
@@ -184,8 +191,8 @@ Use this order:
 1. Read [README.md](./README.md).
 2. Read [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 3. Read [GETTING_STARTED.md](./GETTING_STARTED.md).
-4. Open the public examples in `lsh-core`, `lsh-bridge` and
-   `node-red-contrib-lsh-logic`.
+4. Open the public examples in `lsh-core`, `lsh-bridge`,
+   `labo-smart-home-coordinator` and `node-red-contrib-lsh-logic`.
 
 That path tells you very quickly whether the stack fits your hardware,
 automation style and tooling preferences.
@@ -208,7 +215,9 @@ MQTT and Node-RED.
   [`lsh-bridge/docs/runtime-behavior.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/runtime-behavior.md)
 - Bridge compile-time knobs:
   [`lsh-bridge/docs/compile-time-configuration.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/compile-time-configuration.md)
-- Node-RED config and examples:
+- Headless coordinator config and CLI/library usage:
+  [`labo-smart-home-coordinator` README](https://github.com/labodj/labo-smart-home-coordinator)
+- Node-RED wrapper config and examples:
   [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic)
 - Exact wire contract:
   [`lsh-protocol/shared/lsh_protocol.md`](https://github.com/labodj/lsh-protocol/blob/main/shared/lsh_protocol.md)

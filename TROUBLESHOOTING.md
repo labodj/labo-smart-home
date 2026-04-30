@@ -16,8 +16,8 @@ If you only have one minute, use this shortcut:
   path first
 - retained `conf/state` but device still feels offline: inspect live
   reachability, not retained data
-- click request appears but no action happens: inspect Node-RED config and the
-  click handshake
+- click request appears but no action happens: inspect the coordinator config
+  and the click handshake
 - commands hit `IN` but actuators do not move: inspect codec, payload shape and
   bridge diagnostics
 
@@ -29,7 +29,8 @@ In a healthy first bring-up, you should be able to observe all of these:
 - `LSH/<device>/state` appears with a valid actuator snapshot
 - `LSH/<device>/bridge` carries bridge-local runtime traffic and diagnostics
 - `LSH/<device>/events` carries controller-backed runtime traffic
-- Node-RED exports the topic set it wants to subscribe to
+- the coordinator, or the Node-RED wrapper's Configuration output, exports the
+  topic set it wants to subscribe to
 
 If one of those layers is missing, the symptom usually already tells you where
 to look first.
@@ -40,8 +41,10 @@ to look first.
   topology
 - `lsh-bridge`: MQTT `bridge` topic, runtime diagnostics, bridge compile-time
   settings
-- `node-red-contrib-lsh-logic`: debug outputs, startup recovery behavior,
-  `system-config.json` alignment
+- `labo-smart-home-coordinator`: CLI/library diagnostics, startup recovery
+  behavior and config alignment
+- `node-red-contrib-lsh-logic`: Node-RED debug outputs, status and inline
+  config alignment
 - MQTT broker: retained `conf` and `state`, live `events`, inbound `IN`
   commands and service-topic traffic
 
@@ -132,17 +135,18 @@ Use live signals to decide reachability:
 - live `state`
 - a successful controller-backed device `PING`
 
-### Node-RED starts and immediately requests startup `BOOT`
+### The coordinator starts and immediately requests startup `BOOT`
 
 This is expected only when at least one configured device is still missing an
 authoritative `conf + state` snapshot.
 
 If it keeps happening unexpectedly, check:
 
-- device names in `system-config.json`
+- device names in the coordinator config JSON
 - `lshBasePath`, `homieBasePath` and `serviceTopic`
 - whether the broker still retains the expected `conf` and `state` snapshots
-- whether Node-RED is subscribing to the same topic layout the bridge publishes
+- whether the coordinator or Node-RED wrapper is subscribing to the same topic
+  layout the bridge publishes
 
 ### Network click requests appear, but the distributed action never fires
 
@@ -157,8 +161,8 @@ The happy path is:
 
 Most likely causes:
 
-- `system-config.json` does not describe the button/actor mapping correctly
-- Node-RED never emits the ACK
+- the coordinator config does not describe the button/actor mapping correctly
+- the coordinator never emits the ACK
 - the ACK is emitted on the wrong topic
 - click timeout expires before the handshake completes
 
@@ -168,7 +172,7 @@ Check:
 - button IDs
 - target actuator IDs
 - `serviceTopic` and base topic settings
-- Node-RED debug outputs for command emission
+- coordinator logs, or Node-RED debug outputs, for command emission
 
 ### Commands are published to `IN`, but the actuator does not change
 
@@ -196,7 +200,7 @@ expects text.
 Check:
 
 - `CONFIG_MSG_PACK_MQTT` in `lsh-bridge`
-- `protocol` in the Node-RED node
+- `protocol` in the coordinator or Node-RED node
 - upstream Node-RED `mqtt-in` payload type
 
 For first bring-up, prefer readable MQTT payloads unless compact MQTT payloads
@@ -208,8 +212,8 @@ Look at discovery shaping, not the low-level serial link.
 
 Check:
 
-- `haDiscovery` and `haDiscoveryPrefix` in the Node-RED node
-- `haDiscovery` overrides in `system-config.json`
+- the companion Homie-to-Home-Assistant discovery package configuration
+- discovery overrides in that package
 - whether Homie topics are present and stable
 
 ## First-Lab Mistakes That Waste Time
@@ -217,7 +221,8 @@ Check:
 - changing topic names before the stock examples work
 - changing both codec and topic layout at the same time
 - assuming retained snapshots prove current liveness
-- debugging Node-RED before verifying the controller/bridge serial link
+- debugging the coordinator or Node-RED wrapper before verifying the
+  controller/bridge serial link
 - enabling richer network-click behavior before the base `conf + state` path is
   healthy
 
@@ -229,14 +234,15 @@ bundled examples:
 - topic base or service topic
 - serial codec
 - UART pin map
-- system-config device names
+- coordinator config device names
 - controller environment/profile
 
 The quickest path back to a known-good mental model is usually:
 
 1. controller example from `lsh-core`
 2. bridge example from `lsh-bridge`
-3. example flow and config from `node-red-contrib-lsh-logic`
+3. coordinator config from `labo-smart-home-coordinator`, or example flow and
+   inline config from `node-red-contrib-lsh-logic`
 
 ## Need The Underlying Details?
 
@@ -247,5 +253,7 @@ The quickest path back to a known-good mental model is usually:
 - Controller docs: <https://github.com/labodj/lsh-core>
 - Bridge runtime docs:
   <https://github.com/labodj/lsh-bridge/blob/main/docs/runtime-behavior.md>
-- Node-RED docs:
+- Headless coordinator docs:
+  <https://github.com/labodj/labo-smart-home-coordinator>
+- Node-RED wrapper docs:
   <https://github.com/labodj/node-red-contrib-lsh-logic>

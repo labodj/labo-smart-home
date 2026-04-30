@@ -20,6 +20,10 @@ If you are still deciding whether LSH fits your use case, pair this page with
   public reference stack this is `lsh-bridge` on ESP32.
 - **Orchestrator**: the higher-level automation peer that coordinates multiple
   devices over MQTT. In the public reference stack this is
+  `labo-smart-home-coordinator`, either running directly or through
+  `node-red-contrib-lsh-logic`.
+- **Node-RED wrapper**: the visual-flow integration around the standalone
+  coordinator runtime. In the public stack this is
   `node-red-contrib-lsh-logic`.
 - **Protocol source of truth**: the repository that owns command IDs, wire keys
   and generated artifacts. In the public stack this is `lsh-protocol`.
@@ -74,7 +78,8 @@ If you are still deciding whether LSH fits your use case, pair this page with
 - **Profile**: the concrete rules a stack applies on top of the base wire
   contract, such as topic layout, cache policy and local handling of commands.
 - **Reference stack**: the concrete public profile currently implemented by
-  `lsh-core`, `lsh-bridge`, `node-red-contrib-lsh-logic` and `lsh-protocol`.
+  `lsh-core`, `lsh-bridge`, `labo-smart-home-coordinator`,
+  `node-red-contrib-lsh-logic` and `lsh-protocol`.
 - **Embedding project**: the real deployment project that wraps one of the
   reusable public repos with board-specific PlatformIO settings, credentials,
   release policy or integration glue.

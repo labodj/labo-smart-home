@@ -33,11 +33,14 @@ bring-up behaves strangely halfway through, use
 graph LR
   Core["lsh-core<br/>Controller runtime"] <--> Bridge["lsh-bridge<br/>ESP32 bridge"]
   Bridge <--> Broker["MQTT broker"]
-  Broker <--> Logic["node-red-contrib-lsh-logic<br/>Orchestration"]
+  Broker <--> Logic["labo-smart-home-coordinator<br/>Headless orchestration"]
+  Broker <--> NodeRed["node-red-contrib-lsh-logic<br/>Node-RED wrapper"]
   Logic --> HA["Home Assistant"]
+  NodeRed --> HA
   Protocol["lsh-protocol<br/>Shared contract"] -. aligns .-> Core
   Protocol -. aligns .-> Bridge
   Protocol -. aligns .-> Logic
+  Protocol -. aligns .-> NodeRed
 ```
 
 ## Example Assets You Can Reuse
@@ -51,10 +54,12 @@ repositories:
   [`lsh-bridge/examples/basic-homie-bridge`](https://github.com/labodj/lsh-bridge/tree/main/examples/basic-homie-bridge)
 - **Node-RED example flow**:
   [`node-red-contrib-lsh-logic/examples/lsh-logic-example.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/lsh-logic-example.json)
-- **Minimal Node-RED system config**:
-  [`node-red-contrib-lsh-logic/examples/system-config.minimal.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/system-config.minimal.json)
-- **Richer multi-device Node-RED config**:
-  [`node-red-contrib-lsh-logic/examples/system-config.multi-device.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/system-config.multi-device.json)
+- **Minimal inline Node-RED config**:
+  [`node-red-contrib-lsh-logic/examples/inline-config.minimal.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.minimal.json)
+- **Richer multi-device inline Node-RED config**:
+  [`node-red-contrib-lsh-logic/examples/inline-config.multi-device.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.multi-device.json)
+- **Headless coordinator package**:
+  [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator)
 
 ## What You Need For A First Full-Stack Lab
 
@@ -63,7 +68,11 @@ For the public reference path you need:
 - one controller target supported by `lsh-core`
 - one ESP32 target for `lsh-bridge`
 - one MQTT broker
-- one Node-RED instance
+- one orchestration runtime:
+  [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator)
+  for CLI/library deployments, or
+  [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)
+  when you want Node-RED
 - optional Home Assistant if you want discovery and entity projection
 
 For the reference electrical pattern used by the current examples:
@@ -97,7 +106,8 @@ Most failed first bring-ups come from one of these mismatches:
 
 ### 3. Topic layout must match
 
-These values must align between bridge and Node-RED:
+These values must align between bridge and the coordinator runtime, whether it
+runs directly or through Node-RED:
 
 - `CONFIG_MQTT_TOPIC_BASE` ↔ `lshBasePath`
 - `CONFIG_MQTT_TOPIC_SERVICE` ↔ `serviceTopic`
@@ -119,9 +129,9 @@ The bridge rejects controller topology that exceeds its compiled limits:
 
 These must be large enough for the `DEVICE_DETAILS` emitted by the controller.
 
-### 5. Node-RED config must match the actual device topology
+### 5. Orchestrator config must match the actual device topology
 
-In `system-config.json`, these must match what the controller really exposes:
+In the coordinator config, these must match what the controller really exposes:
 
 - device names
 - button IDs
@@ -188,20 +198,26 @@ This example already reflects the public topic profile:
 For the first pass, avoid changing topic names, service topic or codec choices
 unless you have a strong reason.
 
-### Step 4. Bring up MQTT and Node-RED
+### Step 4. Bring up MQTT and orchestration
 
-Install the Node-RED package as documented in:
+Pick the orchestration surface that matches how you want to operate the stack.
+
+Use the standalone package when you want a headless service, CLI process or
+custom Node.js integration:
+
+- [`labo-smart-home-coordinator` README](https://github.com/labodj/labo-smart-home-coordinator)
+
+Use the Node-RED wrapper when you want a visual flow, debug sidebar and
+Node-RED-managed MQTT nodes:
 
 - [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic)
-
-Then import:
-
 - [`examples/lsh-logic-example.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/lsh-logic-example.json)
 
-And place one of these under your Node-RED user directory:
+For Node-RED `v3.0.0+`, paste the system config JSON directly into the node
+editor. The reusable examples are:
 
-- [`examples/system-config.minimal.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/system-config.minimal.json)
-- [`examples/system-config.multi-device.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/system-config.multi-device.json)
+- [`examples/inline-config.minimal.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.minimal.json)
+- [`examples/inline-config.multi-device.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.multi-device.json)
 
 The example flow already shows the intended shape:
 
@@ -218,7 +234,8 @@ When the stack is lined up, the first useful things to look for are:
 - a valid `state` publish for the same device
 - bridge-local traffic on `LSH/<device>/bridge`
 - controller-backed traffic on `LSH/<device>/events`
-- Node-RED topic subscription updates emitted from the Configuration output
+- topic subscription updates emitted by the coordinator, or by the Node-RED
+  wrapper's Configuration output
 
 If one of those signals is missing, stop guessing and use
 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
@@ -229,7 +246,7 @@ Once the base stack is healthy, expand in this order:
 
 1. more controller devices
 2. network click logic
-3. Home Assistant discovery overrides
+3. Homie-to-Home-Assistant discovery through the companion discovery package
 4. MsgPack over MQTT
 5. custom topic naming or deployment-specific tuning
 

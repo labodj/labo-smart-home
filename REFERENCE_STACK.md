@@ -17,20 +17,21 @@ mode and something looks wrong, keep
 
 ## Public Repositories
 
-| Repository                                                                           | Role in the reference stack                                                             |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                     | Authoritative controller runtime for field I/O, local logic and compact serial payloads |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                 | ESP32 bridge between serial LSH, MQTT and Homie                                         |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) | Central orchestration peer on MQTT                                                      |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                             | Shared source of truth for command IDs, compact keys and generated artifacts            |
+| Repository                                                                             | Role in the reference stack                                                             |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Authoritative controller runtime for field I/O, local logic and compact serial payloads |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge between serial LSH, MQTT and Homie                                         |
+| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Central orchestration peer on MQTT for headless CLI/library deployments                 |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the same orchestration runtime                                  |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared source of truth for command IDs, compact keys and generated artifacts            |
 
 ## Runtime Shape
 
 ```text
-+------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
-| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| node-red-contrib-lsh-logic|---->| Home Assistant |
-| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration             |     | UI / entities  |
-+------------------+     +------------------+     +-------------+     +---------------------------+     +----------------+
++------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
+| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| coordinator / Node-RED node |---->| Home Assistant |
+| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration               |     | UI / entities  |
++------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
 ```
 
 The runtime path has three active peers. `lsh-protocol` sits beside them as the
@@ -40,11 +41,14 @@ shared contract that keeps payload IDs, keys and generated code aligned.
 graph LR
   Core["lsh-core<br/>Controller runtime"] <--> Bridge["lsh-bridge<br/>ESP32 bridge"]
   Bridge <--> Broker["MQTT broker"]
-  Broker <--> Logic["node-red-contrib-lsh-logic<br/>Orchestration"]
+  Broker <--> Logic["labo-smart-home-coordinator<br/>Headless orchestration"]
+  Broker <--> NodeRed["node-red-contrib-lsh-logic<br/>Node-RED wrapper"]
   Logic --> HA["Home Assistant"]
+  NodeRed --> HA
   Protocol["lsh-protocol<br/>Shared contract"] -. aligns .-> Core
   Protocol -. aligns .-> Bridge
   Protocol -. aligns .-> Logic
+  Protocol -. aligns .-> NodeRed
 ```
 
 ## Responsibilities
@@ -53,8 +57,10 @@ graph LR
   the authoritative device topology/state emitted on the serial link.
 - `lsh-bridge` owns serial framing, controller synchronization, MQTT transport,
   Homie projection and bridge-local diagnostics.
-- `node-red-contrib-lsh-logic` owns central registry state, startup recovery,
+- `labo-smart-home-coordinator` owns central registry state, startup recovery,
   watchdog logic and distributed click orchestration across devices.
+- `node-red-contrib-lsh-logic` embeds that coordinator in Node-RED and exposes a
+  visual configuration/editor surface.
 - `lsh-protocol` owns the wire-level contract, not the runtime policy of any
   specific implementation.
 
@@ -93,7 +99,7 @@ sequenceDiagram
   participant Core as lsh-core
   participant Bridge as lsh-bridge
   participant Broker as MQTT broker
-  participant Logic as node-red-contrib-lsh-logic
+  participant Logic as coordinator runtime
 
   Core->>Bridge: BOOT
   Bridge->>Core: REQUEST_DETAILS
@@ -115,14 +121,14 @@ Important bridge-side behavior:
   re-establishes runtime sync around the cached or freshly confirmed controller
   model
 
-Important Node-RED behavior:
+Important coordinator behavior:
 
-- at startup, `node-red-contrib-lsh-logic` reuses retained `conf` and `state`
-  only as the last known authoritative snapshots
+- at startup, `labo-smart-home-coordinator` and its Node-RED wrapper reuse
+  retained `conf` and `state` only as the last known authoritative snapshots
 - retained snapshots are not proof of current reachability
 - if one or more configured devices are still missing authoritative snapshots,
-  Node-RED sends one bridge-local `BOOT` on the service topic to request a
-  replay, then repairs missing snapshots and pings devices that are still
+  the coordinator sends one bridge-local `BOOT` on the service topic to request
+  a replay, then repairs missing snapshots and pings devices that are still
   unreachable
 
 ## `PING` And `BOOT` Semantics
@@ -150,11 +156,12 @@ The public stack implements a two-phase network click handshake:
 1. `lsh-core` emits `NETWORK_CLICK_REQUEST` on serial after a configured network
    click starts.
 2. `lsh-bridge` republishes that request on `LSH/<device>/events`.
-3. `node-red-contrib-lsh-logic` validates the request, checks the involved
-   devices and sends `NETWORK_CLICK_ACK` on `LSH/<device>/IN`.
+3. the coordinator validates the request, checks the involved devices and sends
+   `NETWORK_CLICK_ACK` on `LSH/<device>/IN`.
 4. `lsh-bridge` forwards the ACK to `lsh-core`.
 5. `lsh-core` confirms the click with `NETWORK_CLICK_CONFIRM`.
-6. Node-RED executes the distributed automation only after that confirmation.
+6. the coordinator executes the distributed automation only after that
+   confirmation.
 
 If the handshake stalls, `lsh-core` falls back according to the configured local
 policy for that clickable.
@@ -164,7 +171,7 @@ sequenceDiagram
   participant Core as lsh-core
   participant Bridge as lsh-bridge
   participant Broker as MQTT broker
-  participant Logic as node-red-contrib-lsh-logic
+  participant Logic as coordinator runtime
 
   Core->>Bridge: NETWORK_CLICK_REQUEST
   Bridge->>Broker: publish on events
@@ -188,7 +195,8 @@ When you need one exact answer fast, this is the shortest map:
 - **Controller feature flags and firmware integration**: [`lsh-core` README](https://github.com/labodj/lsh-core)
 - **Bridge runtime policy and diagnostics**: [`lsh-bridge/docs/runtime-behavior.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/runtime-behavior.md)
 - **Bridge compile-time knobs**: [`lsh-bridge/docs/compile-time-configuration.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/compile-time-configuration.md)
-- **Node-RED setup, `system-config.json` and examples**: [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic) and [`examples/`](https://github.com/labodj/node-red-contrib-lsh-logic/tree/main/examples)
+- **Headless coordinator setup, JSON config and CLI/library usage**: [`labo-smart-home-coordinator` README](https://github.com/labodj/labo-smart-home-coordinator)
+- **Node-RED setup, inline config and examples**: [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic) and [`examples/`](https://github.com/labodj/node-red-contrib-lsh-logic/tree/main/examples)
 - **Canonical wire contract**: [`lsh-protocol/shared/lsh_protocol.md`](https://github.com/labodj/lsh-protocol/blob/main/shared/lsh_protocol.md)
 - **Role semantics for `BOOT`, `PING`, profiles and immediate peers**: [`lsh-protocol/docs/profiles-and-roles.md`](https://github.com/labodj/lsh-protocol/blob/main/docs/profiles-and-roles.md)
 
@@ -204,5 +212,6 @@ If you are new to the project, this is the shortest practical path:
 6. Keep [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) nearby once you start testing real traffic.
 7. Read [`lsh-core`](https://github.com/labodj/lsh-core) for controller-side runtime behavior.
 8. Read [`lsh-bridge`](https://github.com/labodj/lsh-bridge) for bridge/runtime policy.
-9. Read [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) for orchestration behavior.
-10. Read [`lsh-protocol`](https://github.com/labodj/lsh-protocol) for the exact shared contract.
+9. Read [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) for orchestration behavior.
+10. Read [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic) if you want the Node-RED wrapper.
+11. Read [`lsh-protocol`](https://github.com/labodj/lsh-protocol) for the exact shared contract.
