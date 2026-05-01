@@ -1,25 +1,24 @@
 # LSH Troubleshooting
 
-This page is the shortest path from "something is off" to "I know which layer
-to inspect next".
+This page is the shortest path from "something is off" to "I know which layer to inspect
+next".
 
-For the normal adoption path, read [GETTING_STARTED.md](./GETTING_STARTED.md).
-For the runtime model behind these checks, read
-[REFERENCE_STACK.md](./REFERENCE_STACK.md).
+If you are still setting up the first lab, keep
+[GETTING_STARTED.md](./GETTING_STARTED.md) nearby. For the broader documentation map,
+use [DOCS.md](./DOCS.md).
 
 ## First 60-Second Triage
 
 If you only have one minute, use this shortcut:
 
 - no MQTT at all: inspect bridge connectivity and Homie setup first
-- `bridge` traffic but no `conf/state/events`: inspect the controller serial
-  path first
-- retained `conf/state` but device still feels offline: inspect live
-  reachability, not retained data
-- click request appears but no action happens: inspect the coordinator config
-  and the click handshake
-- commands hit `IN` but actuators do not move: inspect codec, payload shape and
-  bridge diagnostics
+- `bridge` traffic but no `conf/state/events`: inspect the controller serial path first
+- retained `conf/state` but device still feels offline: inspect live reachability, not
+  retained data
+- click request appears but no action happens: inspect the coordinator config and the
+  click handshake
+- commands hit `IN` but actuators do not move: inspect codec, payload shape and bridge
+  diagnostics
 
 ## What Good Looks Like
 
@@ -29,24 +28,22 @@ In a healthy first bring-up, you should be able to observe all of these:
 - `LSH/<device>/state` appears with a valid actuator snapshot
 - `LSH/<device>/bridge` carries bridge-local runtime traffic and diagnostics
 - `LSH/<device>/events` carries controller-backed runtime traffic
-- the coordinator, or the Node-RED wrapper's Configuration output, exports the
-  topic set it wants to subscribe to
+- the coordinator, or the Node-RED wrapper's Configuration output, exports the topic set
+  it wants to subscribe to
 
-If one of those layers is missing, the symptom usually already tells you where
-to look first.
+If one of those layers is missing, the symptom usually already tells you where to look
+first.
 
 ## Where To Observe The Stack
 
-- `lsh-core`: controller serial behavior, compile-time flags, configured device
-  topology
-- `lsh-bridge`: MQTT `bridge` topic, runtime diagnostics, bridge compile-time
-  settings
-- `labo-smart-home-coordinator`: CLI/library diagnostics, startup recovery
-  behavior and config alignment
-- `node-red-contrib-lsh-logic`: Node-RED debug outputs, status and inline
+- `lsh-core`: controller serial behavior, compile-time flags, configured device topology
+- `lsh-bridge`: MQTT `bridge` topic, runtime diagnostics, bridge compile-time settings
+- `labo-smart-home-coordinator`: CLI/library diagnostics, startup recovery behavior and
   config alignment
-- MQTT broker: retained `conf` and `state`, live `events`, inbound `IN`
-  commands and service-topic traffic
+- `node-red-contrib-lsh-logic`: Node-RED debug outputs, status and inline config
+  alignment
+- MQTT broker: retained `conf` and `state`, live `events`, inbound `IN` commands and
+  service-topic traffic
 
 ## Fast Diagnosis Map
 
@@ -93,9 +90,8 @@ This is the classic "bridge is reachable, controller is not" case.
 
 Treat that as a precise clue.
 
-It means the bridge can answer bridge-local health probes, but it does not
-currently trust the downstream controller path enough to answer a
-controller-backed device probe.
+It means the bridge can answer bridge-local health probes, but it does not currently
+trust the downstream controller path enough to answer a controller-backed device probe.
 
 Look for:
 
@@ -105,8 +101,8 @@ Look for:
 
 ### `conf` appears, but `state` never appears
 
-The bridge probably accepted controller details but never completed the
-follow-up state phase.
+The bridge probably accepted controller details but never completed the follow-up state
+phase.
 
 Look for:
 
@@ -118,15 +114,15 @@ Check:
 
 - bridge capacities: `CONFIG_MAX_ACTUATORS`, `CONFIG_MAX_BUTTONS`,
   `CONFIG_MAX_NAME_LENGTH`
-- whether the controller example/profile you started from actually matches the
-  device you flashed
+- whether the controller example/profile you started from actually matches the device
+  you flashed
 
 ### I can see retained `conf` and `state`, but the device still behaves offline
 
 That can be completely normal.
 
-Retained snapshots are the last known authoritative state. They are not proof
-that the controller is reachable right now.
+Retained snapshots are the last known authoritative state. They are not proof that the
+controller is reachable right now.
 
 Use live signals to decide reachability:
 
@@ -145,8 +141,8 @@ If it keeps happening unexpectedly, check:
 - device names in the coordinator config JSON
 - `lshBasePath`, `homieBasePath` and `serviceTopic`
 - whether the broker still retains the expected `conf` and `state` snapshots
-- whether the coordinator or Node-RED wrapper is subscribing to the same topic
-  layout the bridge publishes
+- whether the coordinator or Node-RED wrapper is subscribing to the same topic layout
+  the bridge publishes
 
 ### Network click requests appear, but the distributed action never fires
 
@@ -189,13 +185,12 @@ The bridge can emit diagnostics on `LSH/<device>/bridge`, including:
 - `mqtt_command_rejected`
 - `actuator_command_storm_dropped`
 
-If those appear, the bridge is telling you the command path is the problem, not
-the UI layer.
+If those appear, the bridge is telling you the command path is the problem, not the UI
+layer.
 
 ### MQTT payloads look like unreadable binary
 
-That usually means MQTT MsgPack is enabled and the tool reading the topic
-expects text.
+That usually means MQTT MsgPack is enabled and the tool reading the topic expects text.
 
 Check:
 
@@ -203,8 +198,8 @@ Check:
 - `protocol` in the coordinator or Node-RED node
 - upstream Node-RED `mqtt-in` payload type
 
-For first bring-up, prefer readable MQTT payloads unless compact MQTT payloads
-are a deliberate requirement.
+For first bring-up, prefer readable MQTT payloads unless compact MQTT payloads are a
+deliberate requirement.
 
 ### Home Assistant entities are missing or oddly named
 
@@ -221,15 +216,14 @@ Check:
 - changing topic names before the stock examples work
 - changing both codec and topic layout at the same time
 - assuming retained snapshots prove current liveness
-- debugging the coordinator or Node-RED wrapper before verifying the
-  controller/bridge serial link
-- enabling richer network-click behavior before the base `conf + state` path is
-  healthy
+- debugging the coordinator or Node-RED wrapper before verifying the controller/bridge
+  serial link
+- enabling richer network-click behavior before the base `conf + state` path is healthy
 
 ## When To Stop Customizing And Compare With The Public Examples
 
-If you have already changed more than one of these, stop and compare against the
-bundled examples:
+If you have already changed more than one of these, stop and compare against the bundled
+examples:
 
 - topic base or service topic
 - serial codec
@@ -241,19 +235,9 @@ The quickest path back to a known-good mental model is usually:
 
 1. controller example from `lsh-core`
 2. bridge example from `lsh-bridge`
-3. coordinator config from `labo-smart-home-coordinator`, or example flow and
-   inline config from `node-red-contrib-lsh-logic`
+3. coordinator config from `labo-smart-home-coordinator`, or example flow and inline
+   config from `node-red-contrib-lsh-logic`
 
-## Need The Underlying Details?
-
-- Architecture and semantics: [REFERENCE_STACK.md](./REFERENCE_STACK.md)
-- First bring-up path: [GETTING_STARTED.md](./GETTING_STARTED.md)
-- Adoption questions: [FAQ.md](./FAQ.md)
-- Shared terms: [GLOSSARY.md](./GLOSSARY.md)
-- Controller docs: <https://github.com/labodj/lsh-core>
-- Bridge runtime docs:
-  <https://github.com/labodj/lsh-bridge/blob/main/docs/runtime-behavior.md>
-- Headless coordinator docs:
-  <https://github.com/labodj/labo-smart-home-coordinator>
-- Node-RED wrapper docs:
-  <https://github.com/labodj/node-red-contrib-lsh-logic>
+For the runtime model behind these checks, read
+[REFERENCE_STACK.md](./REFERENCE_STACK.md). For repository-specific docs and examples,
+use [DOCS.md](./DOCS.md).

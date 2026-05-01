@@ -1,19 +1,16 @@
 # LSH FAQ
 
-This page answers the most common "should I use this?" and "how should I
-approach it?" questions about the public LSH stack.
+This page answers the most common "should I use this?" and "how should I approach it?"
+questions about the public LSH stack.
 
-If you want the concrete runtime profile first, read
-[REFERENCE_STACK.md](./REFERENCE_STACK.md). If you want the first practical lab
-path, read [GETTING_STARTED.md](./GETTING_STARTED.md).
+For the full documentation map, use [DOCS.md](./DOCS.md).
 
 ## What is LSH in one sentence?
 
-LSH is a wired, local-first home automation stack that keeps physical control
-fast and deterministic while exposing the system cleanly over MQTT, Node-RED
-and Home Assistant.
+LSH is a wired, local-first home automation stack that keeps physical control fast and
+deterministic while exposing the system cleanly over MQTT, Node-RED and Home Assistant.
 
-## Do I need all four public repositories?
+## Do I need every public repository?
 
 No.
 
@@ -26,13 +23,14 @@ They are split by responsibility:
 - `node-red-contrib-lsh-logic` wraps that coordinator for Node-RED users.
 - `lsh-protocol` keeps the shared payload contract aligned across the stack.
 
-If you only want to study or reuse one layer, you can start there. If you want
-the full public reference behavior, you eventually need all four.
+If you only want to study or reuse one layer, start there. For a real stack you usually
+combine the controller, bridge and one orchestration surface. The protocol repository is
+the shared source of truth behind the generated contract; most adopters read it when
+they need exact wire details rather than editing it on day one.
 
 ## Why is LSH split across several repositories?
 
-Because each layer has a different job, different constraints and a different
-audience.
+Because each layer has a different job, different constraints and a different audience.
 
 The split keeps the public stack easier to understand and easier to adopt:
 
@@ -41,24 +39,24 @@ The split keeps the public stack easier to understand and easier to adopt:
 - orchestration stays focused on policy and distributed logic
 - protocol ownership stays explicit instead of being duplicated by hand
 
-That separation is one of the reasons the stack is easier to study than a big
-monolithic automation repo.
+That separation is one of the reasons the stack is easier to study than a big monolithic
+automation repo.
 
 ## Do I need Node-RED?
 
 Not for the lowest layer.
 
-`lsh-core` plus `lsh-bridge` already gives you a controller + MQTT path. You
-add orchestration when you want the public distributed runtime model:
+`lsh-core` plus `lsh-bridge` already gives you a controller + MQTT path. You add
+orchestration when you want the public distributed runtime model:
 
 - startup recovery
 - distributed network clicks
 - device registry state
 - central watchdog behavior
 
-Use [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator)
-when you want that runtime as a headless CLI process or embedded Node.js
-library. Use
+Use
+[`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator)
+when you want that runtime as a headless CLI process or embedded Node.js library. Use
 [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)
 when you want the same runtime inside Node-RED.
 
@@ -66,8 +64,8 @@ when you want the same runtime inside Node-RED.
 
 No.
 
-Home Assistant is an optional consumer of the MQTT/Homie side of the stack. The
-core public runtime story is controller, bridge, broker and orchestration.
+Home Assistant is an optional consumer of the MQTT/Homie side of the stack. The core
+public runtime story is controller, bridge, broker and orchestration.
 
 ## Can I adopt LSH incrementally?
 
@@ -90,7 +88,7 @@ The lowest-friction path is:
 
 1. [README.md](./README.md)
 2. [REFERENCE_STACK.md](./REFERENCE_STACK.md)
-3. [FAQ.md](./FAQ.md)
+3. this FAQ
 4. [GETTING_STARTED.md](./GETTING_STARTED.md)
 
 Then only dive into the repo that matches your immediate goal:
@@ -101,19 +99,19 @@ Then only dive into the repo that matches your immediate goal:
 - `node-red-contrib-lsh-logic` for Node-RED orchestration
 - `lsh-protocol` for exact contract details
 
-For the controller side, current `lsh-core` profiles are configured from TOML.
-You describe relays, buttons, indicators, IDs, pins and click behavior in
-`lsh_devices.toml`; the generator emits the C++ profile. You still need to
-understand your hardware and build environment, but you should not need to write
-device topology code by hand for a typical controller.
+For the controller side, current `lsh-core` profiles are configured from TOML. You
+describe relays, buttons, indicators, IDs, pins and click behavior in
+`lsh_devices.toml`; the generator emits the C++ profile. You still need to understand
+your hardware and build environment, but you should not need to write device topology
+code by hand for a typical controller.
 
 ## What still works when Wi-Fi, MQTT or Node-RED is down?
 
 Controller-local behavior.
 
-That is one of the main design goals of LSH. Physical inputs, relays,
-indicators and local fallback logic stay on the `lsh-core` side instead of
-depending on a server round-trip for every action.
+That is one of the main design goals of LSH. Physical inputs, relays, indicators and
+local fallback logic stay on the `lsh-core` side instead of depending on a server
+round-trip for every action.
 
 ## What does "authoritative" mean in LSH?
 
@@ -122,31 +120,30 @@ It means "this component is the source of truth for this class of state".
 In the public reference stack:
 
 - `lsh-core` is authoritative for controller topology and actuator state
-- retained MQTT snapshots are the last known authoritative state, not proof of
-  current reachability
-- bridge-local diagnostics are useful, but they are not the same thing as a
-  live controller-backed state confirmation
+- retained MQTT snapshots are the last known authoritative state, not proof of current
+  reachability
+- bridge-local diagnostics are useful, but they are not the same thing as a live
+  controller-backed state confirmation
 
 If you are unsure how this plays out at runtime, read
 [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 
 ## Is LSH only for Controllino?
 
-The current public controller-side implementation is centered on Controllino and
-the live installation uses Controllino Maxi boards. That is the most documented
-and battle-tested hardware path today.
+The current public controller-side implementation is centered on Controllino and the
+live installation uses Controllino Maxi boards. That is the most documented and
+battle-tested hardware path today.
 
 The higher layers are intentionally cleaner than that:
 
 - `lsh-protocol` is role-oriented, not Controllino-specific
 - `lsh-bridge` is an ESP32 bridge runtime
-- `labo-smart-home-coordinator` and `node-red-contrib-lsh-logic` depend on the
-  public MQTT/payload contract, not on Controllino itself
+- `labo-smart-home-coordinator` and `node-red-contrib-lsh-logic` depend on the public
+  MQTT/payload contract, not on Controllino itself
 
 ## Should I start with JSON or MsgPack?
 
-For the first evaluation, keep the public examples as close to stock as
-possible.
+For the first evaluation, keep the public examples as close to stock as possible.
 
 That usually means:
 
@@ -154,8 +151,8 @@ That usually means:
 - prefer readable MQTT payloads first
 - only add MQTT MsgPack after the end-to-end path is already healthy
 
-The important rule is not "JSON good, MsgPack bad" or the reverse. The
-important rule is that both sides of each hop must agree on the active codec.
+The important rule is not "JSON good, MsgPack bad" or the reverse. The important rule is
+that both sides of each hop must agree on the active codec.
 
 ## Can I rename topics?
 
@@ -170,19 +167,18 @@ The public examples and docs consistently use:
 - `LSH/<device>/IN`
 - `LSH/Node-RED/SRV`
 
-Keeping that layout for the first bring-up removes a whole class of avoidable
-errors.
+Keeping that layout for the first bring-up removes a whole class of avoidable errors.
 
 ## Do I need to copy the public examples exactly?
 
 Not forever, but close enough for the first bring-up.
 
-The public examples exist to remove ambiguity. The fastest way to get a wrong
-result is to change codec, topics, device names and timing assumptions before
-the stock path works once end to end.
+The public examples exist to remove ambiguity. The fastest way to get a wrong result is
+to change codec, topics, device names and timing assumptions before the stock path works
+once end to end.
 
-The intended workflow is: make the example build, make one real device behave,
-then customize names, topology and distributed logic in small steps.
+The intended workflow is: make the example build, make one real device behave, then
+customize names, topology and distributed logic in small steps.
 
 ## What is the fastest honest way to evaluate LSH?
 
@@ -191,49 +187,29 @@ Use this order:
 1. Read [README.md](./README.md).
 2. Read [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 3. Read [GETTING_STARTED.md](./GETTING_STARTED.md).
-4. Open the public examples in `lsh-core`, `lsh-bridge`,
-   `labo-smart-home-coordinator` and `node-red-contrib-lsh-logic`.
+4. Open the public examples in `lsh-core`, `lsh-bridge`, `labo-smart-home-coordinator`
+   and `node-red-contrib-lsh-logic`.
 
-That path tells you very quickly whether the stack fits your hardware,
-automation style and tooling preferences.
+That path tells you very quickly whether the stack fits your hardware, automation style
+and tooling preferences.
 
 ## Where should I look if something does not work?
 
 Start with [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 
-It maps common symptoms to the most likely mismatches across controller, bridge,
-MQTT and Node-RED.
+It maps common symptoms to the most likely mismatches across controller, bridge, MQTT
+and Node-RED.
 
 ## Where do I find the exact settings and contract details?
 
-- System-level picture: [REFERENCE_STACK.md](./REFERENCE_STACK.md)
-- First lab path: [GETTING_STARTED.md](./GETTING_STARTED.md)
-- Hardware pattern: [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md)
-- Controller configuration and flags:
-  [`lsh-core` README](https://github.com/labodj/lsh-core)
-- Bridge runtime behavior:
-  [`lsh-bridge/docs/runtime-behavior.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/runtime-behavior.md)
-- Bridge compile-time knobs:
-  [`lsh-bridge/docs/compile-time-configuration.md`](https://github.com/labodj/lsh-bridge/blob/main/docs/compile-time-configuration.md)
-- Headless coordinator config and CLI/library usage:
-  [`labo-smart-home-coordinator` README](https://github.com/labodj/labo-smart-home-coordinator)
-- Node-RED wrapper config and examples:
-  [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic)
-- Exact wire contract:
-  [`lsh-protocol/shared/lsh_protocol.md`](https://github.com/labodj/lsh-protocol/blob/main/shared/lsh_protocol.md)
+Use [DOCS.md](./DOCS.md). It keeps the detailed links to the stack profile, repository
+READMEs, bridge runtime docs, Node-RED examples and protocol contract in one place.
 
 ## Is LSH production-proven or just a demo?
 
-The public repositories are the extracted, cleaned up and documented form of a
-stack that has already been used in a real installation for years.
+The public repositories are the extracted, cleaned up and documented form of a stack
+that has already been used in a real installation for years.
 
-That does not mean every possible hardware combination is documented. It does
-mean the architecture, timing assumptions and cross-repo behaviors were shaped
-by real use rather than by a purely synthetic demo.
-
-## Read Next
-
-- For the full public stack story: [REFERENCE_STACK.md](./REFERENCE_STACK.md)
-- For the practical bring-up path: [GETTING_STARTED.md](./GETTING_STARTED.md)
-- For shared terms: [GLOSSARY.md](./GLOSSARY.md)
-- For symptom-based diagnosis: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
+That does not mean every possible hardware combination is documented. It does mean the
+architecture, timing assumptions and cross-repo behaviors were shaped by real use rather
+than by a purely synthetic demo.
