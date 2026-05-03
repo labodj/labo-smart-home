@@ -1,11 +1,11 @@
 # Getting Started With LSH
 
-This guide is the shortest practical path from "I want to evaluate LSH" to "I know how
-to bring up the public stack without guessing".
+This guide gives you a practical path from "I want to evaluate LSH" to "I know how to
+bring up the reference stack without guessing".
 
 It keeps the first run intentionally narrow. Start from the public examples, make one
-controller/bridge/orchestrator path healthy, then customize one layer at a time. For the
-broader documentation map, use [DOCS.md](./DOCS.md).
+controller-to-bridge-to-orchestrator path healthy, then customize one layer at a time.
+For the broader documentation map, use [DOCS.md](./DOCS.md).
 
 ## Before You Start
 
@@ -14,7 +14,7 @@ broader documentation map, use [DOCS.md](./DOCS.md).
 - If you are already debugging symptoms, use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - If you are still deciding whether LSH fits your project, skim [FAQ.md](./FAQ.md).
 
-## The Public Stack At A Glance
+## The Public Stack at a Glance
 
 ```mermaid
 graph LR
@@ -22,15 +22,13 @@ graph LR
   Bridge <--> Broker["MQTT broker"]
   Broker <--> Logic["labo-smart-home-coordinator<br/>Headless orchestration"]
   Broker <--> NodeRed["node-red-contrib-lsh-logic<br/>Node-RED wrapper"]
-  Logic --> HA["Home Assistant"]
-  NodeRed --> HA
   Protocol["lsh-protocol<br/>Shared contract"] -. aligns .-> Core
   Protocol -. aligns .-> Bridge
   Protocol -. aligns .-> Logic
   Protocol -. aligns .-> NodeRed
 ```
 
-## What You Need For A First Full-Stack Lab
+## What You Need for a First Full-Stack Lab
 
 For the public reference path you need:
 
@@ -42,7 +40,6 @@ For the public reference path you need:
   for CLI/library deployments, or
   [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)
   when you want Node-RED
-- optional Home Assistant if you want discovery and entity projection
 
 For the reference electrical pattern used by the current examples:
 
@@ -53,13 +50,19 @@ For the reference electrical pattern used by the current examples:
 
 For the exact panel pattern, read [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md).
 
-For the controller firmware, start from `lsh-core` `v3.0.0` or newer. The documented
+For the controller firmware, start from `lsh-core` v3.0.0 or newer. The documented
 configuration path is TOML-based: device topology lives in `lsh_devices.toml`, and
 PlatformIO runs a pre-build generator before compiling.
 
-## Non-Negotiables For The First Bring-Up
+If you also want entities in Home Assistant, add an external generic Homie discovery
+tool after the LSH path is healthy:
+[`homie-home-assistant-discovery`](https://github.com/labodj/homie-home-assistant-discovery)
+or
+[`node-red-contrib-homie-home-assistant-discovery`](https://github.com/labodj/node-red-contrib-homie-home-assistant-discovery).
 
-Most failed first bring-ups come from one of these mismatches:
+## First Bring-Up Checks
+
+Most first bring-up problems come from one of these mismatches:
 
 ### 1. Serial codec must match
 
@@ -74,7 +77,7 @@ Most failed first bring-ups come from one of these mismatches:
 
 ### 3. Topic layout must match
 
-These values must align between bridge and the coordinator runtime, whether it runs
+These values must align between the bridge and the coordinator runtime, whether it runs
 directly or through Node-RED:
 
 - `CONFIG_MQTT_TOPIC_BASE` ↔ `lshBasePath`
@@ -95,7 +98,7 @@ The bridge rejects controller topology that exceeds its compiled limits:
 - `CONFIG_MAX_BUTTONS`
 - `CONFIG_MAX_NAME_LENGTH`
 
-These must be large enough for the `DEVICE_DETAILS` emitted by the controller.
+These limits must be large enough for the `DEVICE_DETAILS` emitted by the controller.
 
 ### 5. Orchestrator config must match the actual device topology
 
@@ -106,12 +109,12 @@ In the coordinator config, these must match what the controller really exposes:
 - target device names
 - target actuator IDs when `allActuators` is `false`
 
-## First Real Lab Path
+## First Lab Path
 
 ### Step 1. Align on the reference profile
 
 Read [REFERENCE_STACK.md](./REFERENCE_STACK.md) before wiring pieces together. It
-defines the topic layout, bootstrap behavior and role boundaries used by the public
+defines the topic layout, bootstrap behavior, and role boundaries used by the public
 examples.
 
 If a term feels overloaded, skim [GLOSSARY.md](./GLOSSARY.md). If you are still deciding
@@ -125,17 +128,17 @@ Open:
 - [`lsh-core/examples/multi-device-project/lsh_devices.toml`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/lsh_devices.toml)
 - [`lsh-core/examples/multi-device-project/README.md`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/README.md)
 
-Use it as the baseline for your controller bring-up.
+Use that example as the baseline for your controller bring-up.
 
 Important example profiles:
 
-- `J1_release`: lean profile, MsgPack enabled, no network-click subsystem
+- `J1_release`: lean profile with MsgPack enabled and network-click behavior disabled
 - `J2_release`: richer profile with network-click behavior enabled
 
 If you want the simplest first controller test, start from the leaner profile and only
 add distributed click logic after the base controller/bridge link is healthy.
 
-The first useful controller-only command is:
+A useful controller-only build command is:
 
 ```bash
 platformio run -d examples/multi-device-project -e J1_release
@@ -160,20 +163,20 @@ This example already reflects the public topic profile:
 - `LSH/<device>/IN`
 - `LSH/Node-RED/SRV`
 
-For the first pass, avoid changing topic names, service topic or codec choices unless
-you have a strong reason.
+For the first pass, keep topic names, service topic, and codec choices unchanged unless
+your hardware or deployment requires a change.
 
 ### Step 4. Bring up MQTT and orchestration
 
 Pick the orchestration surface that matches how you want to operate the stack.
 
-Use the standalone package when you want a headless service, CLI process or custom
+Use the standalone package when you want a headless service, CLI process, or custom
 Node.js integration:
 
 - [`labo-smart-home-coordinator` README](https://github.com/labodj/labo-smart-home-coordinator)
 
-Use the Node-RED wrapper when you want a visual flow, debug sidebar and Node-RED-managed
-MQTT nodes:
+Use the Node-RED wrapper when you want a visual flow, debug sidebar, and
+Node-RED-managed MQTT nodes:
 
 - [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic)
 - [`examples/lsh-logic-example.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/lsh-logic-example.json)
@@ -189,7 +192,7 @@ The example flow already shows the intended shape:
 - dynamic `mqtt-in` subscription management
 - `lsh-logic` as central orchestrator
 - MQTT-out for LSH commands
-- debug outputs for commands, alerts, topics and raw traffic
+- debug outputs for commands, alerts, topics, and raw traffic
 
 ### Step 5. Verify the first healthy signs
 
@@ -202,20 +205,20 @@ When the stack is lined up, the first useful things to look for are:
 - topic subscription updates emitted by the coordinator, or by the Node-RED wrapper's
   Configuration output
 
-If one of those signals is missing, stop guessing and use
-[TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
+If one of those signals is missing, use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
+before changing more variables.
 
-### Step 6. Only then add richer behavior
+### Step 6. Add richer behavior after the base path works
 
 Once the base stack is healthy, expand in this order:
 
 1. more controller devices
 2. network click logic
-3. Homie-to-Home-Assistant discovery through the companion discovery package
+3. optional external Homie-to-Home-Assistant discovery, after the LSH path is stable
 4. MsgPack over MQTT
 5. custom topic naming or deployment-specific tuning
 
-## Best First Questions To Ask Yourself
+## Questions to Ask Before Customizing
 
 Before you customize anything, decide:
 
@@ -223,10 +226,10 @@ Before you customize anything, decide:
 - Do you want JSON first for observability, or MsgPack first for compactness?
 - Do you need only local controller logic, or distributed click orchestration too?
 - Are you evaluating the stack, or already shaping a deployment?
-- Are you changing one variable at a time, or changing hardware, topics, codecs and
+- Are you changing one variable at a time, or changing hardware, topics, codecs, and
   device names in the same pass?
 
 Those answers tell you how much of the stack to adopt immediately.
 
-For repository links, protocol details and alternate reading paths, use
+For repository links, protocol details, and alternate reading paths, use
 [DOCS.md](./DOCS.md).

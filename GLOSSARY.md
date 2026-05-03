@@ -1,31 +1,31 @@
 # LSH Glossary
 
-A few LSH words are used very deliberately across the public repositories. This glossary
+Some LSH terms carry specific meanings across the public repositories. This glossary
 keeps those meanings in one place.
 
 If you are new to the project, skim this once before diving into the individual
-repositories. Most cross-repo confusion comes from the same few words being used very
+repositories. Most cross-repo confusion comes from a small set of words that are used
 precisely. For the broader reading map, use [DOCS.md](./DOCS.md).
 
 ## Core Roles
 
-- **Controller**: the device that owns the real field I/O. In the public reference stack
-  this is `lsh-core` running on a Controllino or Arduino-class controller.
+- **Controller**: the device that handles the real field I/O. In the public reference
+  stack this is `lsh-core` running on a Controllino or Arduino-class controller.
 - **Bridge**: the adapter between the controller link and MQTT/Homie. In the public
   reference stack this is `lsh-bridge` on ESP32.
 - **Orchestrator**: the higher-level automation peer that coordinates multiple devices
   over MQTT. In the public reference stack this is `labo-smart-home-coordinator`, either
   running directly or through `node-red-contrib-lsh-logic`.
-- **Node-RED wrapper**: the visual-flow integration around the standalone coordinator
+- **Node-RED wrapper**: the visual flow integration around the standalone coordinator
   runtime. In the public stack this is `node-red-contrib-lsh-logic`.
-- **Protocol source of truth**: the repository that owns command IDs, wire keys and
+- **Protocol source of truth**: the repository that owns command IDs, wire keys, and
   generated artifacts. In the public stack this is `lsh-protocol`.
 
-## State And Synchronization
+## State and Synchronization
 
-- **Authoritative**: the source that currently owns the truth for a specific piece of
-  data. In the public stack, controller topology and actuator state are authoritative on
-  the controller side.
+- **Authoritative**: the source of truth for a specific piece of data. In the public
+  stack, controller topology and actuator state are authoritative on the controller
+  side.
 - **Topology**: the declared device identity plus the actuator and button layout exposed
   by `DEVICE_DETAILS`.
 - **Runtime state**: the current actuator snapshot exposed by `ACTUATORS_STATE`.
@@ -50,7 +50,7 @@ precisely. For the broader reading map, use [DOCS.md](./DOCS.md).
 - **Controller-backed traffic**: MQTT payloads that represent current controller
   knowledge or controller-originated runtime events.
 - **Bridge-local traffic**: MQTT payloads emitted by the bridge about its own runtime,
-  diagnostics or bridge-scoped health.
+  diagnostics, or bridge-scoped health.
 
 ## Public MQTT Profile
 
@@ -66,14 +66,14 @@ precisely. For the broader reading map, use [DOCS.md](./DOCS.md).
 ## Behavioral Terms
 
 - **Immediate peer**: the other endpoint on the current hop. The protocol is defined
-  between immediate peers, not between branded products.
+  between immediate peers, not between product names.
 - **Profile**: the concrete rules a stack applies on top of the base wire contract, such
-  as topic layout, cache policy and local handling of commands.
+  as topic layout, cache policy, and local command handling.
 - **Reference stack**: the concrete public profile currently implemented by `lsh-core`,
-  `lsh-bridge`, `labo-smart-home-coordinator`, `node-red-contrib-lsh-logic` and
+  `lsh-bridge`, `labo-smart-home-coordinator`, `node-red-contrib-lsh-logic`, and
   `lsh-protocol`.
 - **Embedding project**: the real deployment project that wraps one of the reusable
-  public repos with board-specific PlatformIO settings, credentials, release policy or
+  public repos with board-specific PlatformIO settings, credentials, release policy, or
   integration glue.
 - **Network click**: a distributed click flow where the controller emits a request, the
   orchestrator validates it, then the controller waits for ACK and final confirmation
@@ -81,7 +81,7 @@ precisely. For the broader reading map, use [DOCS.md](./DOCS.md).
 - **Fallback**: the controller-local behavior used when a network click cannot complete
   in time.
 
-## `BOOT` And `PING`
+## `BOOT` and `PING`
 
 - **`BOOT`**: a re-synchronization signal. It does not carry version metadata. By
   default it is role-local, not an end-to-end command that must cross every hop

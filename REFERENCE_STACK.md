@@ -6,30 +6,39 @@ The base LSH protocol is intentionally transport-agnostic and role-oriented. The
 stack documented here is the concrete profile implemented by the current repositories
 and used by the live installation.
 
-Use this page when you want one coherent, cross-repo explanation before diving into
+Read this page when you want one coherent cross-repo explanation before diving into
 repository-specific details. For the broader reading map, use [DOCS.md](./DOCS.md).
 
 ## Public Repositories
 
-| Repository                                                                             | Role in the reference stack                                                             |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Authoritative controller runtime for field I/O, local logic and compact serial payloads |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge between serial LSH, MQTT and Homie                                         |
-| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Central orchestration peer on MQTT for headless CLI/library deployments                 |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the same orchestration runtime                                  |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared source of truth for command IDs, compact keys and generated artifacts            |
+| Repository                                                                             | Role in the reference stack                                                              |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Authoritative controller runtime for field I/O, local logic, and compact serial payloads |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge for serial LSH protocol, MQTT/Homie exposure, and diagnostics               |
+| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Central orchestration peer on MQTT for headless CLI/library deployments                  |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the same orchestration runtime                                   |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared source of truth for command IDs, compact keys, and generated artifacts            |
+
+## Optional External Home Assistant Discovery
+
+Home Assistant MQTT discovery is outside this LSH reference stack. If you need it, use a
+generic Homie discovery project:
+[`homie-home-assistant-discovery`](https://github.com/labodj/homie-home-assistant-discovery)
+as a standalone daemon or embeddable Node.js core, or
+[`node-red-contrib-homie-home-assistant-discovery`](https://github.com/labodj/node-red-contrib-homie-home-assistant-discovery)
+as a Node-RED node.
 
 ## Runtime Shape
 
 ```text
-+------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
-| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| coordinator / Node-RED node |---->| Home Assistant |
-| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration               |     | UI / entities  |
-+------------------+     +------------------+     +-------------+     +-----------------------------+     +----------------+
++------------------+     +------------------+     +-------------+     +-----------------------------+
+| lsh-core         |<--->| lsh-bridge       |<--->| MQTT broker |<--->| coordinator / Node-RED node |
+| Controllino side |     | ESP32 bridge     |     | transport   |     | orchestration               |
++------------------+     +------------------+     +-------------+     +-----------------------------+
 ```
 
 The runtime path has three active peers. `lsh-protocol` sits beside them as the shared
-contract that keeps payload IDs, keys and generated code aligned.
+contract that keeps payload IDs, keys, and generated code aligned.
 
 ```mermaid
 graph LR
@@ -37,8 +46,6 @@ graph LR
   Bridge <--> Broker["MQTT broker"]
   Broker <--> Logic["labo-smart-home-coordinator<br/>Headless orchestration"]
   Broker <--> NodeRed["node-red-contrib-lsh-logic<br/>Node-RED wrapper"]
-  Logic --> HA["Home Assistant"]
-  NodeRed --> HA
   Protocol["lsh-protocol<br/>Shared contract"] -. aligns .-> Core
   Protocol -. aligns .-> Bridge
   Protocol -. aligns .-> Logic
@@ -47,14 +54,14 @@ graph LR
 
 ## Responsibilities
 
-- `lsh-core` owns physical inputs, relays, indicators, local click behavior and the
-  authoritative device topology/state emitted on the serial link.
-- `lsh-bridge` owns serial framing, controller synchronization, MQTT transport, Homie
-  projection and bridge-local diagnostics.
-- `labo-smart-home-coordinator` owns central registry state, startup recovery, watchdog
-  logic and distributed click orchestration across devices.
+- `lsh-core` is authoritative for physical inputs, relays, indicators, local click
+  behavior, and device topology/state emitted on the serial link.
+- `lsh-bridge` handles serial framing, controller synchronization, MQTT transport, Homie
+  projection, and bridge-local diagnostics.
+- `labo-smart-home-coordinator` maintains central registry state, startup recovery,
+  watchdog logic, and distributed click orchestration across devices.
 - `node-red-contrib-lsh-logic` embeds that coordinator in Node-RED and exposes a visual
-  configuration/editor surface.
+  configuration surface.
 - `lsh-protocol` owns the wire-level contract, not the runtime policy of any specific
   implementation.
 
@@ -77,7 +84,7 @@ The current public MQTT profile uses these topic families:
 That split is intentional: consumers must not treat bridge-local traffic as if it were
 proof that the downstream controller is currently alive.
 
-## Bootstrap And Resync
+## Bootstrap and Resync
 
 The reference stack uses a strict controller-authoritative resync model:
 
@@ -104,7 +111,7 @@ sequenceDiagram
   Logic->>Broker: consume authoritative snapshots
 ```
 
-Important bridge-side behavior:
+Bridge-side behavior to know:
 
 - if validated topology is already cached and still matches, the bridge keeps running
   and only waits for fresh authoritative state
@@ -114,7 +121,7 @@ Important bridge-side behavior:
 - MQTT reconnects do not redefine the protocol. The bridge re-subscribes and
   re-establishes runtime sync around the cached or freshly confirmed controller model
 
-Important coordinator behavior:
+Coordinator behavior to know:
 
 - at startup, `labo-smart-home-coordinator` and its Node-RED wrapper reuse retained
   `conf` and `state` only as the last known authoritative snapshots
@@ -123,7 +130,7 @@ Important coordinator behavior:
   coordinator sends one bridge-local `BOOT` on the service topic to request a replay,
   then repairs missing snapshots and pings devices that are still unreachable
 
-## `PING` And `BOOT` Semantics
+## `PING` and `BOOT` Semantics
 
 The base protocol keeps both commands local to the current hop or role unless a profile
 documents a stronger meaning. In the current public profile:
@@ -132,7 +139,7 @@ documents a stronger meaning. In the current public profile:
 - device-topic `PING` is answered on `events` only when the bridge currently has a live
   and synchronized controller path
 - service-topic `PING` is answered on `bridge` and reports bridge-local runtime health
-  such as `controller_connected`, `runtime_synchronized` and `bootstrap_phase`
+  such as `controller_connected`, `runtime_synchronized`, and `bootstrap_phase`
 - controller `BOOT` invalidates bridge-side trust in cached controller state
 - service-topic `BOOT` is a bridge-local resync trigger; it does not redefine `BOOT` as
   a mandatory end-to-end traversal command
@@ -147,11 +154,11 @@ The public stack implements a two-phase network click handshake:
 1. `lsh-core` emits `NETWORK_CLICK_REQUEST` on serial after a configured network click
    starts.
 2. `lsh-bridge` republishes that request on `LSH/<device>/events`.
-3. the coordinator validates the request, checks the involved devices and sends
+3. The coordinator validates the request, checks the involved devices, and sends
    `NETWORK_CLICK_ACK` on `LSH/<device>/IN`.
 4. `lsh-bridge` forwards the ACK to `lsh-core`.
 5. `lsh-core` confirms the click with `NETWORK_CLICK_CONFIRM`.
-6. the coordinator executes the distributed automation only after that confirmation.
+6. The coordinator executes the distributed automation only after that confirmation.
 
 If the handshake stalls, `lsh-core` falls back according to the configured local policy
 for that clickable.
@@ -174,8 +181,8 @@ sequenceDiagram
   Broker->>Logic: execute distributed action
 ```
 
-## Next Step
+## Next Steps
 
 If this model makes sense and you want to wire a first lab, continue with
 [GETTING_STARTED.md](./GETTING_STARTED.md). If you need to locate a specific repository,
-example or protocol detail, use [DOCS.md](./DOCS.md).
+example, or protocol detail, use [DOCS.md](./DOCS.md).

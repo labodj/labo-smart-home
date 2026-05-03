@@ -1,22 +1,23 @@
 # Hardware Overview
 
-This page shows the hardware pattern used in the current Labo Smart Home installation.
+This page describes the hardware pattern used in the current Labo Smart Home
+installation.
 
-It is not a wiring manual and it is not meant to replace the official Controllino
-documentation, local electrical regulations, or the review of a qualified professional.
-Its job is simpler: show how the public software repositories relate to the real
-hardware stack.
+It is not a wiring manual, and it does not replace the official Controllino
+documentation, local electrical regulations, or review by a qualified professional. Its
+job is narrower: it shows how the public software repositories relate to the hardware in
+the reference installation.
 
-The current public snapshot of LSH is built around **six Controllino Maxi PLCs**, each
-paired with an **ESP32 bridge** inside one of the house electrical panels.
+The current public LSH reference installation is built around **six Controllino Maxi
+PLCs**, each paired with an **ESP32 bridge** inside one of the house electrical panels.
 
 ## Installation Pattern
 
 The live installation is built around multiple electrical panels, each centered on a
 **Controllino Maxi PLC** and an **ESP32 bridge**.
 
-At a high level, the controller owns the field I/O and deterministic local behavior,
-while the ESP32 bridge exposes the controller runtime over Wi-Fi through MQTT and Homie.
+At a high level, the controller handles field I/O and deterministic local behavior,
+while the ESP32 bridge exposes controller state over Wi-Fi through MQTT and Homie.
 
 ```text
 12/24 VDC power supply
@@ -38,21 +39,21 @@ Common ground shared by:
 
 ## Representative Hardware Stack
 
-The recurring panel pattern is made of a small set of building blocks:
+The recurring panel pattern uses a small set of building blocks:
 
 - a **Controllino Maxi** handling the field inputs and outputs
 - an **ESP32** acting as the Wi-Fi and MQTT bridge
 - a **12 VDC or 24 VDC power supply** feeding the controller side
-- a **5 V buck converter** deriving the ESP32 supply from the same DC source
+- a **5 V buck converter** that derives the ESP32 supply from the same DC source
 - a **3.3 V / 5 V logic level shifter** on the UART path between controller and bridge
 - **external USB extension leads** for bridge maintenance once the panel is closed
 
-Early prototypes used more temporary jumper-style wiring on the controller-to-bridge
-path. Current revisions moved to more solid connectorized links.
+Early prototypes used temporary jumper-style wiring on the controller-to-bridge path.
+Current revisions use more robust connector-based links.
 
 ## Current Panel Snapshot
 
-The image below shows a current panel snapshot from the live installation.
+The image below shows a current panel from the live installation.
 
 <p>
   <img
@@ -62,42 +63,42 @@ The image below shows a current panel snapshot from the live installation.
   >
 </p>
 
-It is useful as a hardware reference because it shows three practical aspects that
-matter in the real build:
+It is useful as a hardware reference because it shows three practical details from the
+real build:
 
 - the Controllino and ESP32 bridge live together inside the panel
-- the controller-to-bridge connection is no longer a loose prototyping setup
-- short external USB leads are kept available for bridge maintenance and reflashing
+- the controller-to-bridge connection is no longer loose prototyping wiring
+- short external USB leads are kept available for bridge maintenance and firmware
+  flashing
 
 ## Power Topology
 
 - A 12 VDC or 24 VDC power supply feeds the Controllino.
-- The same supply is also used in parallel to feed a buck converter that generates 5 V
-  for the ESP32 bridge.
-- Ground is common across the controller side and bridge side.
+- The same supply also feeds a buck converter that generates 5 V for the ESP32 bridge.
+- Ground is common across the controller and bridge sides.
 
-This keeps the controller power domain simple while allowing the ESP32 side to run from
-a dedicated low-voltage rail derived from the same source.
+This keeps the controller power domain simple while allowing the ESP32 to run from a
+dedicated low-voltage rail derived from the same source.
 
-## Controller To Bridge Interface
+## Controller-to-Bridge Interface
 
 The ESP32 bridge is connected to the **front serial / TTL interface** of the
 Controllino.
 
-Because the controller side and bridge side do not operate at the same logic level, the
-UART path is routed through a **3.3 V to 5 V logic level shifter**.
+Because the controller and bridge sides do not operate at the same logic level, the UART
+path is routed through a **3.3 V to 5 V logic level shifter**.
 
 Practical notes:
 
 - The level shifter sits between the Controllino TTL pins and the ESP32 UART pins.
 - The bridge and controller share a common reference ground.
-- Current hardware revisions use more solid connectorized wiring rather than temporary
-  jumper-pin style connections.
+- Current hardware revisions use connector-based wiring rather than temporary jumper-pin
+  style connections.
 
 ## Panel Serviceability
 
 In the current build, the ESP32 boards live inside the panel, but firmware maintenance
-was kept practical.
+is still practical.
 
 - USB extension cables are routed out of the panel.
 - This allows flashing or recovering the bridge firmware without reworking the internal
@@ -107,7 +108,7 @@ was kept practical.
 
 ## Field I/O Model
 
-The Controllino side drives and reads the actual field wiring.
+The Controllino side drives and reads the field wiring.
 
 - Loads can be switched at **12 V / 24 V / 115 V / 230 V**, within the limits documented
   by the official Controllino datasheet and the rest of the installation.
@@ -117,41 +118,41 @@ The Controllino side drives and reads the actual field wiring.
 - Standard button indicator LEDs do not present special integration issues in this
   setup.
 
-This separation was an important design choice: user-facing button circuits stay in low
+This separation was an important design choice: user-facing button circuits stay at low
 voltage, while the controller still manages higher-voltage loads where appropriate.
 
-## Controller And Network Responsibilities
+## Controller and Network Responsibilities
 
 The physical design mirrors the software boundary.
 
-- The **Controllino** remains the owner of the real inputs, relays, indicators and local
-  click behavior.
+- The **Controllino** remains responsible for the real inputs, relays, indicators, and
+  local click behavior.
 - The **ESP32 bridge** is responsible for serial transport, Wi-Fi connectivity, MQTT
-  exposure and Homie integration.
-- The central **coordinator** coordinates distributed behavior across panels. It can run
-  headlessly through `labo-smart-home-coordinator` or inside Node-RED through
+  exposure, and Homie integration.
+- The central **coordinator** manages distributed behavior across panels. It can run as
+  a headless service through `labo-smart-home-coordinator` or inside Node-RED with
   `node-red-contrib-lsh-logic`, but it does not replace the controller-side local model.
 
 This matters operationally: local device behavior should remain coherent even when
-Wi-Fi, MQTT or the central logic node are unavailable. The network augments the
+Wi-Fi, MQTT, or the central logic node are unavailable. The network augments the
 installation; it does not define the basic electrical behavior of the panel.
 
-## Why This Layout
+## Why This Hardware Layout
 
-This hardware layout came from practical constraints rather than from trying to design a
-textbook bus architecture.
+This hardware layout came from practical constraints rather than an idealized bus
+architecture.
 
 - The house was renovated incrementally.
 - The controllers were distributed across multiple electrical panels.
 - A single wired field bus between all panels was not practical in this installation.
-- A local Wi-Fi bridge per panel was the most realistic path to connect the distributed
-  controller fleet.
+- A local Wi-Fi bridge in each panel was the most realistic path to connect the
+  distributed controller fleet.
 
 That decision pushed the software architecture toward:
 
 - compact serial payloads between controller and bridge
 - MQTT as the transport layer between bridges and the central coordinator
 - Homie as the device model exposed by the bridge
-- stronger validation and test coverage on the higher-level orchestration logic
+- stronger validation and test coverage in the higher-level orchestration logic
 
 For the software map and repository links, use [DOCS.md](./DOCS.md).

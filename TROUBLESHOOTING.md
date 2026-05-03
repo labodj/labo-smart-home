@@ -1,7 +1,7 @@
 # LSH Troubleshooting
 
-This page is the shortest path from "something is off" to "I know which layer to inspect
-next".
+This page gives you a quick path from "something is off" to "I know which layer to
+inspect next."
 
 If you are still setting up the first lab, keep
 [GETTING_STARTED.md](./GETTING_STARTED.md) nearby. For the broader documentation map,
@@ -13,14 +13,14 @@ If you only have one minute, use this shortcut:
 
 - no MQTT at all: inspect bridge connectivity and Homie setup first
 - `bridge` traffic but no `conf/state/events`: inspect the controller serial path first
-- retained `conf/state` but device still feels offline: inspect live reachability, not
-  retained data
+- retained `conf/state` but the device still feels offline: inspect live reachability,
+  not retained data
 - click request appears but no action happens: inspect the coordinator config and the
   click handshake
-- commands hit `IN` but actuators do not move: inspect codec, payload shape and bridge
-  diagnostics
+- commands reach `IN` but actuators do not move: inspect codec, payload shape, and
+  bridge diagnostics
 
-## What Good Looks Like
+## Healthy First-Lab Baseline
 
 In a healthy first bring-up, you should be able to observe all of these:
 
@@ -34,15 +34,15 @@ In a healthy first bring-up, you should be able to observe all of these:
 If one of those layers is missing, the symptom usually already tells you where to look
 first.
 
-## Where To Observe The Stack
+## Where to Observe the Stack
 
 - `lsh-core`: controller serial behavior, compile-time flags, configured device topology
 - `lsh-bridge`: MQTT `bridge` topic, runtime diagnostics, bridge compile-time settings
-- `labo-smart-home-coordinator`: CLI/library diagnostics, startup recovery behavior and
+- `labo-smart-home-coordinator`: CLI/library diagnostics, startup recovery behavior, and
   config alignment
-- `node-red-contrib-lsh-logic`: Node-RED debug outputs, status and inline config
+- `node-red-contrib-lsh-logic`: Node-RED debug outputs, status, and inline config
   alignment
-- MQTT broker: retained `conf` and `state`, live `events`, inbound `IN` commands and
+- MQTT broker: retained `conf` and `state`, live `events`, inbound `IN` commands, and
   service-topic traffic
 
 ## Fast Diagnosis Map
@@ -64,7 +64,7 @@ Start with:
 - Homie configuration state
 - MQTT broker credentials and host settings in the embedding project
 
-### I get `LSH/<device>/bridge` replies, but no `conf`, `state` or `events`
+### I get `LSH/<device>/bridge` replies, but no `conf`, `state`, or `events`
 
 The bridge is alive, but the controller path is not healthy or not synchronized.
 
@@ -139,7 +139,7 @@ authoritative `conf + state` snapshot.
 If it keeps happening unexpectedly, check:
 
 - device names in the coordinator config JSON
-- `lshBasePath`, `homieBasePath` and `serviceTopic`
+- `lshBasePath`, `homieBasePath`, and `serviceTopic`
 - whether the broker still retains the expected `conf` and `state` snapshots
 - whether the coordinator or Node-RED wrapper is subscribing to the same topic layout
   the bridge publishes
@@ -153,11 +153,11 @@ The happy path is:
 1. `NETWORK_CLICK_REQUEST` on `events`
 2. `NETWORK_CLICK_ACK` on `IN`
 3. `NETWORK_CLICK_CONFIRM` on `events`
-4. only then does Node-RED execute the distributed action
+4. Only then does the coordinator execute the distributed action
 
 Most likely causes:
 
-- the coordinator config does not describe the button/actor mapping correctly
+- the coordinator config does not describe the button/actuator mapping correctly
 - the coordinator never emits the ACK
 - the ACK is emitted on the wrong topic
 - click timeout expires before the handshake completes
@@ -198,20 +198,21 @@ Check:
 - `protocol` in the coordinator or Node-RED node
 - upstream Node-RED `mqtt-in` payload type
 
-For first bring-up, prefer readable MQTT payloads unless compact MQTT payloads are a
+For the first bring-up, prefer readable MQTT payloads unless compact MQTT payloads are a
 deliberate requirement.
 
 ### Home Assistant entities are missing or oddly named
 
-Look at discovery shaping, not the low-level serial link.
+Look at the external Homie-to-Home-Assistant discovery layer, not the low-level serial
+link.
 
 Check:
 
-- the companion Homie-to-Home-Assistant discovery package configuration
-- discovery overrides in that package
+- the generic Homie discovery package or Node-RED discovery node configuration
+- discovery overrides in that external tool
 - whether Homie topics are present and stable
 
-## First-Lab Mistakes That Waste Time
+## First-Lab Mistakes That Cost Time
 
 - changing topic names before the stock examples work
 - changing both codec and topic layout at the same time
@@ -220,7 +221,7 @@ Check:
   serial link
 - enabling richer network-click behavior before the base `conf + state` path is healthy
 
-## When To Stop Customizing And Compare With The Public Examples
+## When to Stop Customizing and Compare with the Public Examples
 
 If you have already changed more than one of these, stop and compare against the bundled
 examples:
@@ -231,7 +232,7 @@ examples:
 - coordinator config device names
 - controller environment/profile
 
-The quickest path back to a known-good mental model is usually:
+A quick path back to a known-good baseline is usually:
 
 1. controller example from `lsh-core`
 2. bridge example from `lsh-bridge`
