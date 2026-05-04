@@ -25,6 +25,10 @@ accepts commands over MQTT/Homie. A coordinator adds behavior that needs system-
 context, while a shared protocol package keeps compact payloads aligned across the
 components.
 
+The public repositories are installable packages rather than only source snapshots: the
+controller and bridge libraries are available through PlatformIO, and the orchestration
+layer can be used either from Node-RED or as a standalone Node.js runtime.
+
 LSH is not a packaged plug-and-play smart-home product or the simplest path for a few
 Wi-Fi bulbs. It fits projects whose maintainers are comfortable with electrical
 planning, firmware builds, MQTT services, and gradual integration.
@@ -83,24 +87,29 @@ For details on power, UART, level shifting, and panel serviceability, read
 
 ## Public Repositories
 
-| Repository                                                                             | Role                                                          | Latest public release                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Arduino/Controllino runtime for wired controller-side logic   | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-core?display_name=tag&sort=semver)](https://github.com/labodj/lsh-core/releases/latest)                                       |
-| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge for serial LSH protocol and MQTT/Homie exposure  | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-bridge?display_name=tag&sort=semver)](https://github.com/labodj/lsh-bridge/releases/latest)                                   |
-| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Standalone orchestration runtime for CLI and Node.js services | [![GitHub Release](https://img.shields.io/github/v/release/labodj/labo-smart-home-coordinator?display_name=tag&sort=semver)](https://github.com/labodj/labo-smart-home-coordinator/releases/latest) |
-| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the coordinator runtime               | [![GitHub Release](https://img.shields.io/github/v/release/labodj/node-red-contrib-lsh-logic?display_name=tag&sort=semver)](https://github.com/labodj/node-red-contrib-lsh-logic/releases/latest)   |
-| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared protocol spec, generators, and golden payloads         | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-protocol?display_name=tag&sort=semver)](https://github.com/labodj/lsh-protocol/releases/latest)                               |
+| Repository                                                                             | Role                                                          | Latest public release                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`lsh-core`](https://github.com/labodj/lsh-core)                                       | Arduino/Controllino runtime for wired controller-side logic   | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-core?display_name=tag&sort=semver)](https://github.com/labodj/lsh-core/releases/latest) [![PlatformIO Registry](https://badges.registry.platformio.org/packages/labodj/library/lsh-core.svg)](https://registry.platformio.org/libraries/labodj/lsh-core)                |
+| [`lsh-bridge`](https://github.com/labodj/lsh-bridge)                                   | ESP32 bridge for serial LSH protocol and MQTT/Homie exposure  | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-bridge?display_name=tag&sort=semver)](https://github.com/labodj/lsh-bridge/releases/latest) [![PlatformIO Registry](https://badges.registry.platformio.org/packages/labodj/library/lsh-bridge.svg)](https://registry.platformio.org/libraries/labodj/lsh-bridge)        |
+| [`labo-smart-home-coordinator`](https://github.com/labodj/labo-smart-home-coordinator) | Standalone orchestration runtime for CLI and Node.js services | [![GitHub Release](https://img.shields.io/github/v/release/labodj/labo-smart-home-coordinator?display_name=tag&sort=semver)](https://github.com/labodj/labo-smart-home-coordinator/releases/latest) [![npm](https://img.shields.io/npm/v/labo-smart-home-coordinator.svg)](https://www.npmjs.com/package/labo-smart-home-coordinator)         |
+| [`node-red-contrib-lsh-logic`](https://github.com/labodj/node-red-contrib-lsh-logic)   | Node-RED wrapper around the coordinator runtime               | [![GitHub Release](https://img.shields.io/github/v/release/labodj/node-red-contrib-lsh-logic?display_name=tag&sort=semver)](https://github.com/labodj/node-red-contrib-lsh-logic/releases/latest) [![Node-RED Library](https://img.shields.io/badge/Node--RED-Library-8f0000.svg)](https://flows.nodered.org/node/node-red-contrib-lsh-logic) |
+| [`lsh-protocol`](https://github.com/labodj/lsh-protocol)                               | Shared protocol spec, generators, and golden payloads         | [![GitHub Release](https://img.shields.io/github/v/release/labodj/lsh-protocol?display_name=tag&sort=semver)](https://github.com/labodj/lsh-protocol/releases/latest)                                                                                                                                                                         |
 
 Optional Home Assistant discovery is handled outside LSH by generic Homie discovery
 projects, not by the LSH coordinator:
-[`homie-home-assistant-discovery`](https://github.com/labodj/homie-home-assistant-discovery)
-for a standalone daemon or embeddable Node.js core, and
-[`node-red-contrib-homie-home-assistant-discovery`](https://github.com/labodj/node-red-contrib-homie-home-assistant-discovery)
-for use inside Node-RED.
+
+| Repository                                                                                                                     | Role                                         | Latest public release                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`homie-home-assistant-discovery`](https://github.com/labodj/homie-home-assistant-discovery)                                   | Standalone daemon or embeddable Node.js core | [![GitHub Release](https://img.shields.io/github/v/release/labodj/homie-home-assistant-discovery?display_name=tag&sort=semver)](https://github.com/labodj/homie-home-assistant-discovery/releases/latest) [![npm](https://img.shields.io/npm/v/homie-home-assistant-discovery.svg)](https://www.npmjs.com/package/homie-home-assistant-discovery)                                                            |
+| [`node-red-contrib-homie-home-assistant-discovery`](https://github.com/labodj/node-red-contrib-homie-home-assistant-discovery) | Node-RED wrapper for Homie discovery         | [![GitHub Release](https://img.shields.io/github/v/release/labodj/node-red-contrib-homie-home-assistant-discovery?display_name=tag&sort=semver)](https://github.com/labodj/node-red-contrib-homie-home-assistant-discovery/releases/latest) [![Node-RED Library](https://img.shields.io/badge/Node--RED-Library-8f0000.svg)](https://flows.nodered.org/node/node-red-contrib-homie-home-assistant-discovery) |
 
 Maintained infrastructure forks are available when needed, but they are supporting code
-rather than starting points: [`homie-esp8266`](https://github.com/labodj/homie-esp8266)
-and [`async-mqtt-client`](https://github.com/labodj/async-mqtt-client).
+rather than starting points. The
+[`homie-esp8266`](https://github.com/labodj/homie-esp8266) fork is published as
+[`labodj/homie-v5`](https://registry.platformio.org/libraries/labodj/homie-v5) for
+ESP8266/ESP32 Arduino projects that need Homie 3.0.1 compatibility plus opt-in Homie
+v4/v5 discovery modes. The MQTT client fork lives at
+[`async-mqtt-client`](https://github.com/labodj/async-mqtt-client).
 
 ## Runtime Shape
 
