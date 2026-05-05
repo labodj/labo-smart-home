@@ -15,7 +15,9 @@ publish controller state over **MQTT** using the **Homie** device model. The
 orchestration layer can run in **Node-RED** or as a headless **Node.js coordinator**.
 
 This repository is the public entry point for LSH. It shows how the pieces fit together,
-where each component lives, and which docs to read next.
+where each component lives, which docs to read next, and now also hosts the stack
+composer that turns controller contracts into bridge, coordinator and Node-RED
+configuration.
 
 ## What LSH Is
 
@@ -143,6 +145,8 @@ read [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 
 - Use [DOCS.md](./DOCS.md) as the public documentation map.
 - Follow [GETTING_STARTED.md](./GETTING_STARTED.md) for a first end-to-end lab setup.
+- Use [STACK_CONFIG.md](./STACK_CONFIG.md) when you want one TOML file to generate
+  bridge, coordinator and Node-RED configuration from a controller profile.
 - Keep [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) nearby once real MQTT traffic and
   hardware are involved.
 
@@ -166,6 +170,11 @@ optimized static profiles. New adopters typically edit `lsh_devices.toml`; a dev
 profile no longer needs hand-written C++ topology code or hand-maintained actuator ID
 lookup tables.
 
+The public stack composer adds the deployment layer on top of that controller profile.
+`lsh_stack.toml` keeps MQTT codec choices, Node-RED context exports and distributed
+network-click actor targets outside the firmware TOML, while still generating a finished
+bridge/coordinator/Node-RED configuration.
+
 ## Public History
 
 LSH did not begin as a clean public multi-repo design. Early versions were much more
@@ -174,5 +183,7 @@ project was split into reusable pieces: controller runtime, ESP32 bridge runtime
 protocol source of truth, standalone coordinator and a thin Node-RED wrapper.
 
 The repositories were published after years of real-world use, refactoring and cleanup.
-This landing repository is not a separately versioned software artifact; component
-release history lives in the repositories listed above.
+This repository remains the reference-stack entry point, not a runtime peer like
+`lsh-core` or `lsh-bridge`. Its active software surface is intentionally small: the
+`lsh-stack` composer and the quality gates around the public documentation and examples.
+Component release history still lives in the runtime repositories listed above.

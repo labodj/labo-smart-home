@@ -1,0 +1,59 @@
+#:schema ../schemas/lsh_stack.schema.json
+
+schema_version = 1
+
+[core]
+devices = "../../lsh-core/examples/multi-device-project/lsh_devices.toml"
+selected_devices = ["j1", "j2"]
+
+[transport]
+mode = "serial_bridge"
+
+[mqtt]
+codec = "json"
+lsh_base_path = "LSH/"
+homie_base_path = "homie/5/"
+service_topic = "LSH/Node-RED/SRV"
+
+[coordinator]
+click_timeout = "2s"
+click_cleanup_interval = "30s"
+watchdog_interval = "60s"
+interrogate_threshold = "120s"
+ping_timeout = "3s"
+initial_state_timeout = "2s"
+other_devices_prefix = "other_devices"
+other_actors_topic = "home/lsh/other-actors"
+
+[node_red]
+expose_state_context = "none"
+expose_state_key = "lsh_state"
+export_topics = "flow"
+export_topics_key = "lsh_topics"
+expose_config_context = "none"
+expose_config_key = "lsh_config"
+other_actors_context = "global"
+
+[external_actors.zigbee_table_lamp]
+state_key = "other_devices.zigbee_table_lamp.state"
+
+[external_actors.holiday_tree]
+state_key = "other_devices.holiday_tree.state"
+
+[[network_clicks]]
+source = "j2.btn1"
+type = "long"
+actors = [
+  { device = "j1", actuators = "all" },
+  { device = "j2", actuators = ["rel8"] },
+]
+other_actors = ["zigbee_table_lamp"]
+
+[[network_clicks]]
+source = "j2.btn11"
+type = "super_long"
+actors = [
+  { device = "j1", actuators = ["rel7", "rel9"] },
+  { device = "j2", actuators = [9, 10] },
+]
+other_actors = ["holiday_tree"]

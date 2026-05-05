@@ -1,0 +1,12 @@
+#:schema ../schemas/lsh_stack.schema.json
+
+schema_version = 1
+
+[core]
+devices = "../../lsh-core/examples/multi-device-project/lsh_devices.toml"
+
+[transport]
+mode = "serial_bridge"
+
+[mqtt]
+codec = "json"

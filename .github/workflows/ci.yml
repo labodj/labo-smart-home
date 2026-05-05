@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Documentation and Stack Composer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout labo-smart-home
+        uses: actions/checkout@v6
+        with:
+          path: labo-smart-home
+
+      - name: Checkout lsh-core contract provider
+        uses: actions/checkout@v6
+        with:
+          repository: labodj/lsh-core
+          path: lsh-core
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: npm
+          cache-dependency-path: labo-smart-home/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python3 -m pip install --upgrade pip uv
+
+      - name: Cache uv
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('labo-smart-home/uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Install Node dependencies
+        working-directory: labo-smart-home
+        run: npm ci
+
+      - name: Install Python dependencies
+        working-directory: labo-smart-home
+        run: uv sync --locked --all-groups
+
+      - name: Run quality gate
+        working-directory: labo-smart-home
+        run: npm run check
+
+      - name: Validate public stack examples
+        working-directory: labo-smart-home
+        run: |
+          uv run lsh-stack check examples/lsh_stack.toml
+          uv run lsh-stack check examples/lsh_stack.minimal.toml
+          uv run lsh-stack check examples/lsh_stack.network-clicks.toml
+          uv run lsh-stack check examples/lsh_stack.complete.toml
+
+      - name: Smoke-test artifact generation
+        working-directory: labo-smart-home
+        run: |
+          tmpdir="$(mktemp -d)"
+          uv run lsh-stack generate examples/lsh_stack.complete.toml --output-dir "$tmpdir"
+          test -s "$tmpdir/lsh-stack-config.json"
+          test -s "$tmpdir/system-config.json"
+          test -s "$tmpdir/node-red-lsh-logic.json"
+          test -s "$tmpdir/bridge-platformio-flags/j1.txt"
+          test -s "$tmpdir/bridge-platformio-flags/j2.txt"

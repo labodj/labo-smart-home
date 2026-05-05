@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/labodj/labo-smart-home/schemas/lsh_stack.schema.json",
+  "title": "Labo Smart Home Stack Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "core"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "core": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["devices"],
+      "properties": {
+        "devices": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 },
+        "selected_devices": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["serial_bridge", "onboard_ethernet"] }
+      }
+    },
+    "mqtt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codec": { "enum": ["auto", "json", "msgpack"] },
+        "lsh_base_path": { "type": "string", "pattern": ".+/$" },
+        "homie_base_path": { "type": "string", "pattern": ".+/$" },
+        "service_topic": { "type": "string", "minLength": 1 }
+      }
+    },
+    "coordinator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "other_devices_prefix": { "type": "string", "minLength": 1 },
+        "click_timeout": { "$ref": "#/$defs/duration" },
+        "click_cleanup_interval": { "$ref": "#/$defs/duration" },
+        "watchdog_interval": { "$ref": "#/$defs/duration" },
+        "interrogate_threshold": { "$ref": "#/$defs/duration" },
+        "ping_timeout": { "$ref": "#/$defs/duration" },
+        "initial_state_timeout": { "$ref": "#/$defs/duration" },
+        "other_actors_topic": { "type": "string", "minLength": 1 }
+      }
+    },
+    "node_red": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expose_state_context": { "$ref": "#/$defs/context" },
+        "expose_state_key": { "type": "string", "minLength": 1 },
+        "export_topics": { "$ref": "#/$defs/context" },
+        "export_topics_key": { "type": "string", "minLength": 1 },
+        "expose_config_context": { "$ref": "#/$defs/context" },
+        "expose_config_key": { "type": "string", "minLength": 1 },
+        "other_actors_context": { "enum": ["flow", "global"] }
+      }
+    },
+    "external_actors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "state_key": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "network_clicks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/networkClick" }
+    }
+  },
+  "$defs": {
+    "context": { "enum": ["none", "flow", "global"] },
+    "duration": {
+      "oneOf": [
+        { "type": "number", "exclusiveMinimum": 0 },
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(ms|s|m|h)$" }
+      ]
+    },
+    "actuatorRef": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer", "minimum": 1, "maximum": 255 }
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "actuators"],
+      "properties": {
+        "device": { "type": "string", "minLength": 1 },
+        "actuators": {
+          "oneOf": [
+            { "const": "all" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/actuatorRef" },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
+        }
+      }
+    },
+    "networkClick": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "pattern": "^[^.]+\\.[^.]+$"
+        },
+        "type": { "enum": ["long", "super_long"] },
+        "actors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/actor" }
+        },
+        "other_actors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "anyOf": [
+        { "required": ["actors"], "properties": { "actors": { "minItems": 1 } } },
+        {
+          "required": ["other_actors"],
+          "properties": { "other_actors": { "minItems": 1 } }
+        }
+      ]
+    }
+  }
+}

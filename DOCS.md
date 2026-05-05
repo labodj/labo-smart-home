@@ -12,6 +12,7 @@ place.
 - **Deciding whether LSH fits your project**: read [FAQ.md](./FAQ.md).
 - **Understanding the runtime model**: open [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 - **Ready to run a first lab**: follow [GETTING_STARTED.md](./GETTING_STARTED.md).
+- **Generating a finished deployment config**: use [STACK_CONFIG.md](./STACK_CONFIG.md).
 - **Debugging live behavior**: use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - **Planning the hardware layer**: read [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md).
 - **Unfamiliar terms**: skim [GLOSSARY.md](./GLOSSARY.md).
@@ -54,14 +55,22 @@ configuration and change one layer at a time.
 5. Use the bridge example in
    [`lsh-bridge`](https://github.com/labodj/lsh-bridge/tree/main/examples/basic-homie-bridge).
 6. Add the headless coordinator or the Node-RED wrapper.
-7. Optionally add a generic Homie discovery package if you want Home Assistant MQTT
+7. Generate deployment artifacts with [STACK_CONFIG.md](./STACK_CONFIG.md) once the
+   controller profile is stable.
+8. Optionally add a generic Homie discovery package if you want Home Assistant MQTT
    discovery.
-8. Keep [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) nearby once real traffic starts.
+9. Keep [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) nearby once real traffic starts.
 
 ## Detailed References
 
 - Topic layout, bootstrap, `PING`, `BOOT`, and network-click semantics:
   [REFERENCE_STACK.md](./REFERENCE_STACK.md)
+- End-to-end stack TOML, generated bridge flags, coordinator config and Node-RED config:
+  [STACK_CONFIG.md](./STACK_CONFIG.md)
+- Shared quality-gate policy for public repositories:
+  [QUALITY_GATE.md](./QUALITY_GATE.md)
+- Repository quality gate for docs and the stack composer:
+  [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
 - Controller feature flags and firmware integration:
   [`lsh-core` README](https://github.com/labodj/lsh-core)
 - Bridge runtime policy:

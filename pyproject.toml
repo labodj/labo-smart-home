@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "labo-smart-home"
+version = "0.1.0"
+description = "End-to-end Labo Smart Home stack configuration composer"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Labo Smart Home maintainers" }]
+dependencies = []
+
+[project.scripts]
+lsh-stack = "lsh_stack_config.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.18.2",
+  "pytest>=8.4.2",
+  "ruff>=0.14.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lsh_stack_config"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812",
+  "D203",
+  "D213",
+  "EM101",
+  "EM102",
+  "ISC001",
+  "TC001",
+  "TC003",
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "S101"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+pretty = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

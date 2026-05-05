@@ -54,6 +54,11 @@ For the controller firmware, start from `lsh-core` v3.0.0 or newer. The document
 configuration path is TOML-based: device topology lives in `lsh_devices.toml`, and
 PlatformIO runs a pre-build generator before compiling.
 
+For a finished bridge, coordinator and Node-RED configuration, add `lsh_stack.toml`
+after the controller profile is valid. The stack composer reads the controller contract
+and generates deployment artifacts without mixing MQTT or Node-RED settings into the
+firmware TOML.
+
 If you also want entities in Home Assistant, add an external generic Homie discovery
 tool after the LSH path is healthy:
 [`homie-home-assistant-discovery`](https://github.com/labodj/homie-home-assistant-discovery)
@@ -147,6 +152,16 @@ platformio run -d examples/multi-device-project -e J1_release
 When adapting the example, edit `lsh_devices.toml` first. Keep the generated headers and
 `platformio.ini` layout close to the public example until the first device builds,
 publishes details, and reports actuator state.
+
+Then create the stack file:
+
+```bash
+uv run lsh-stack init
+uv run lsh-stack generate lsh_stack.toml --output-dir generated
+```
+
+The generated files give you bridge PlatformIO flags, coordinator `systemConfig` and
+Node-RED `lsh-logic` settings derived from the same controller profile.
 
 ### Step 3. Start from the bridge example
 
