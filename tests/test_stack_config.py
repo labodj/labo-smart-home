@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from lsh_stack_config import cli
 from lsh_stack_config.composer import compose_stack
 from lsh_stack_config.errors import StackConfigError
 from lsh_stack_config.parser import load_stack_config
+from lsh_stack_config.render import write_output_tree
 
 
 def test_stack_config_generates_end_to_end_node_red_and_bridge_config(tmp_path: Path) -> None:
@@ -27,6 +31,9 @@ def test_stack_config_generates_end_to_end_node_red_and_bridge_config(tmp_path: 
 
         [coordinator]
         click_timeout = "2500ms"
+
+        [external_actors.zigbee_table_lamp]
+        state_key = "other_devices.zigbee_table_lamp.state"
 
         [[network_clicks]]
         source = "panel.logic_button"
@@ -53,10 +60,665 @@ def test_stack_config_generates_end_to_end_node_red_and_bridge_config(tmp_path: 
         "actors": [{"name": "lights", "allActuators": False, "actuators": [3]}],
         "otherActors": ["zigbee_table_lamp"],
     }
+    assert stack["externalActors"] == [
+        {
+            "name": "zigbee_table_lamp",
+            "stateKey": "other_devices.zigbee_table_lamp.state",
+        }
+    ]
+    assert "externalActors" not in stack["nodeRed"]["lshLogic"]
     assert (
         json.loads(stack["nodeRed"]["lshLogic"]["systemConfigJson"])
         == stack["coordinator"]["systemConfig"]
     )
+
+
+def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path) -> None:
+    """Generated PlatformIO files build one wide bridge firmware for the stack."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        schema_version = 1
+
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        bridge_project = "bridge"
+        core_base_env = "core_release"
+        bridge_base_env = "bridge_base"
+
+        [deploy.bridge]
+        default_method = "ota"
+        ota_command_template = "./scripts/ota_batch_updater.py -f {firmware} {devices}"
+
+        [deploy.bridge.devices.panel]
+        usb_port = "/dev/ttyUSB0"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    bridge_ini = (output_dir / "platformio-bridge.ini").read_text(encoding="utf-8")
+    deploy_plan = json.loads((output_dir / "deploy-plan.json").read_text(encoding="utf-8"))
+    generated_readme = (output_dir / "README.generated.md").read_text(encoding="utf-8")
+
+    assert "[lsh_stack_bridge_wide]" in bridge_ini
+    assert "-DCONFIG_MAX_ACTUATORS=1U" in bridge_ini
+    assert "[env:bridge]" in bridge_ini
+    assert "extends = bridge_base" in bridge_ini
+    assert "${bridge_base.build_flags}" in bridge_ini
+    assert "${lsh_stack_bridge_wide.build_flags}" in bridge_ini
+    assert "custom_lsh_stack_ota_template = ./scripts/ota_batch_updater.py" in bridge_ini
+    assert "custom_lsh_stack_ota_devices =" in bridge_ini
+    assert "    panel" in bridge_ini
+    assert "    lights" in bridge_ini
+    assert "[env:bridge_usb_panel]" in bridge_ini
+    assert "extends = env:bridge" in bridge_ini
+    assert "upload_port = /dev/ttyUSB0" in bridge_ini
+    assert deploy_plan["bridgeFirmware"]["buildEnv"] == "bridge"
+    assert deploy_plan["bridgeFirmware"]["usbTargets"]["panel"] == {
+        "env": "bridge_usb_panel",
+        "uploadPort": "/dev/ttyUSB0",
+        "command": [
+            "platformio",
+            "run",
+            "-d",
+            str(tmp_path / "bridge"),
+            "-e",
+            "bridge_usb_panel",
+            "-t",
+            "upload",
+        ],
+    }
+    assert deploy_plan["bridge"]["panel"]["otaTarget"] == "lsh_ota_panel"
+    assert deploy_plan["bridge"]["panel"]["defaultMethod"] == "ota"
+    assert deploy_plan["bridge"]["panel"]["defaultUploadCommand"] == (
+        "./scripts/ota_batch_updater.py -f $SOURCE panel"
+    )
+    assert deploy_plan["bridge"]["panel"]["usbPort"] == "/dev/ttyUSB0"
+    assert deploy_plan["batch"]["buildAllBridgeProfiles"] == [
+        "platformio",
+        "run",
+        "-d",
+        str(tmp_path / "bridge"),
+        "-e",
+        "bridge",
+    ]
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    assert (
+        "extra_scripts = pre:.pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py"
+        in core_ini
+    )
+    assert "LSH OTA <device>" in generated_readme
+    assert "OTA custom targets are not generated until" not in generated_readme
+    assert "bridge-platformio-flags/bridge.txt" in generated_readme
+    assert "bridge_usb_panel" in generated_readme
+    assert "Developer: Reload Window" in generated_readme
+
+
+def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
+    """Users can configure broker-specific OTA arguments without shell templates."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [mqtt]
+        homie_base_path = "lab/homie/5/"
+
+        [deploy.bridge]
+        default_method = "ota"
+
+        [deploy.bridge.ota]
+        broker_host = "mqtt.lan"
+        broker_port = 8883
+        broker_username = "lsh"
+        broker_password_env = "LSH_OTA_PASSWORD"
+        homie_version = "5"
+        timeout = 180
+        broker_tls_cacert = "certs/ca.pem"
+        broker_tls_insecure = true
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    bridge_ini = (output_dir / "platformio-bridge.ini").read_text(encoding="utf-8")
+    deploy_plan = json.loads((output_dir / "deploy-plan.json").read_text(encoding="utf-8"))
+    stack_export = json.loads((output_dir / "lsh-stack-config.json").read_text(encoding="utf-8"))
+    ota_script = output_dir / "bridge-ota.py"
+    ota_config = output_dir / "bridge-ota.json"
+
+    expected_template = (
+        f"custom_lsh_stack_ota_template = python {ota_script} --config {ota_config} "
+        "--device-id {device} {firmware}"
+    )
+    expected_command = f"python {ota_script} --config {ota_config} --device-id panel $SOURCE"
+
+    assert ota_script.is_file()
+    assert ota_config.is_file()
+    ota_script_text = ota_script.read_text(encoding="utf-8")
+    assert 'UPDATER_ENV = "LSH_HOMIE_OTA_UPDATER"' in ota_script_text
+    assert 'Path("scripts") / "homie_ota.py"' in ota_script_text
+    assert "subprocess.run(" in ota_script_text
+    assert "[sys.executable, str(updater), *passthrough]" in ota_script_text
+    assert json.loads(ota_config.read_text(encoding="utf-8")) == {
+        "schema": "homie-ota-config/v1",
+        "broker": {
+            "host": "mqtt.lan",
+            "port": 8883,
+            "username": "lsh",
+            "password_env": "LSH_OTA_PASSWORD",
+            "tls_cacert": "certs/ca.pem",
+            "tls_insecure": True,
+        },
+        "homie": {"base_topic": "lab/homie/5/", "version": "5"},
+        "ota": {"timeout": 180},
+    }
+    assert expected_template in bridge_ini
+    assert deploy_plan["bridge"]["panel"]["defaultUploadCommand"] == expected_command
+    assert deploy_plan["bridgeFirmware"]["otaAllCommands"] == [
+        expected_command,
+        expected_command.replace("--device-id panel", "--device-id lights"),
+    ]
+    assert stack_export["deploy"]["bridge"]["ota"]["brokerPasswordEnv"] == "LSH_OTA_PASSWORD"
+    assert stack_export["deploy"]["bridge"]["ota"]["baseTopic"] is None
+    assert stack_export["deploy"]["bridge"]["ota"]["script"] is None
+
+
+def test_stack_config_generated_readme_hides_ota_when_no_ota_template(
+    tmp_path: Path,
+) -> None:
+    """The generated guide only documents OTA targets when they really exist."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        schema_version = 1
+
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        bridge_project = "bridge"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    generated_readme = (output_dir / "README.generated.md").read_text(encoding="utf-8")
+
+    assert "OTA custom targets are not generated until" in generated_readme
+    assert "LSH OTA <device>" not in generated_readme
+    assert "bridge-platformio-flags/bridge.txt" in generated_readme
+    assert "Developer: Reload Window" in generated_readme
+    assert "core/platformio.ini" in generated_readme
+    assert "bridge/platformio.ini" in generated_readme
+    assert "bridge_batch" not in generated_readme
+    assert "root `platformio.ini`" not in generated_readme
+
+
+def test_stack_config_writes_bridge_profiles_custom_ota_and_batch_targets(
+    tmp_path: Path,
+) -> None:
+    """PlatformIO IDE users get wide profile envs plus Homie OTA custom targets."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        bridge_project = "bridge"
+        bridge_env_prefix = "bridge"
+
+        [[platformio.bridge_profiles]]
+        name = "release"
+        extends = "stack_bridge_release"
+
+        [[platformio.bridge_profiles]]
+        name = "littlefs"
+        extends = "stack_bridge_littlefs"
+        default = true
+
+        [deploy.bridge]
+        default_method = "ota"
+        ota_command_template = "./scripts/ota_batch_updater.py -f {firmware} {devices}"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    bridge_ini = (output_dir / "platformio-bridge.ini").read_text(encoding="utf-8")
+    deploy_plan = json.loads((output_dir / "deploy-plan.json").read_text(encoding="utf-8"))
+    batch_script = (output_dir / "platformio-bridge-batch.py").read_text(encoding="utf-8")
+
+    assert "[env:bridge_release]" in bridge_ini
+    assert "extends = stack_bridge_release" in bridge_ini
+    assert "[env:bridge_littlefs]" in bridge_ini
+    assert "extends = stack_bridge_littlefs" in bridge_ini
+    assert "[env:bridge]" in bridge_ini
+    assert "extends = env:bridge_littlefs" in bridge_ini
+    assert "custom_lsh_stack_ota_template = ./scripts/ota_batch_updater.py" in bridge_ini
+    assert "custom_lsh_stack_ota_devices =" in bridge_ini
+    assert "[env:bridge_batch]" in bridge_ini
+    assert "custom_lsh_stack_batch_build_envs =" in bridge_ini
+    assert "bridge_release" in bridge_ini
+    assert "bridge_littlefs" in bridge_ini
+    assert "env.AddCustomTarget(" in batch_script
+    assert "import sys" in batch_script
+    assert "sys.exit(exit_code)" in batch_script
+    assert 'title=f"LSH OTA {device_id}"' in batch_script
+    assert 'title="LSH OTA All"' in batch_script
+
+    firmware = deploy_plan["bridgeFirmware"]
+    assert firmware["defaultProfile"] == "littlefs"
+    assert firmware["buildEnv"] == "bridge_littlefs"
+    assert firmware["profiles"]["release"]["buildEnv"] == "bridge_release"
+    assert firmware["profiles"]["littlefs"]["otaTargets"]["panel"]["target"] == "lsh_ota_panel"
+    assert deploy_plan["batch"]["buildAllBridgeProfiles"] == [
+        "platformio",
+        "run",
+        "-d",
+        str(tmp_path / "bridge"),
+        "-e",
+        "bridge_release",
+        "-e",
+        "bridge_littlefs",
+    ]
+
+
+def test_stack_config_writes_node_red_gui_setup_guide(tmp_path: Path) -> None:
+    """GUI users get exact values without coupling the generator to Node-RED flows."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [node_red]
+        expose_state_context = "global"
+        expose_config_context = "global"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    guide = (output_dir / "node-red-setup.md").read_text(encoding="utf-8")
+
+    assert "`exposeStateContext` | `global`" in guide
+    assert "`exposeConfigContext` | `global`" in guide
+    assert "`protocol` | `msgpack`" in guide
+    assert "Paste this into the `System Config JSON` field" in guide
+    assert '"devices"' in guide
+    assert not (output_dir / "node-red-flow.json").exists()
+
+
+def test_stack_config_derives_local_core_extra_script_and_preserves_base_scripts(
+    tmp_path: Path,
+) -> None:
+    """Local lsh-core checkouts can append to unrelated base extra scripts."""
+    core_project = tmp_path / "lsh-core-personal"
+    core_project.mkdir()
+    (core_project / "platformio.ini").write_text(
+        """
+        [common_base]
+        extra_scripts =
+            scripts/setup_build_actions.py
+
+        [common_release]
+        extends = common_base
+        """,
+        encoding="utf-8",
+    )
+    core_tool = tmp_path / "lsh-core" / "tools" / "generate_lsh_static_config.py"
+    core_tool.parent.mkdir(parents=True)
+    core_tool.write_text("", encoding="utf-8")
+    (core_tool.parent / "platformio_lsh_static_config.py").write_text("", encoding="utf-8")
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+        tool = "lsh-core/tools/generate_lsh_static_config.py"
+
+        [platformio]
+        core_project = "lsh-core-personal"
+        core_base_env = "common_release"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _starter_core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    assert "extra_scripts =\n    ${common_release.extra_scripts}\n" in core_ini
+    assert "pre:../lsh-core/tools/platformio_lsh_static_config.py" in core_ini
+    assert ".pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
+
+
+def test_stack_config_does_not_duplicate_inherited_core_extra_script(tmp_path: Path) -> None:
+    """Existing base lsh-core scripts are inherited rather than emitted twice."""
+    core_project = tmp_path / "lsh-core-personal"
+    core_project.mkdir()
+    (core_project / "platformio.ini").write_text(
+        """
+        [common_base]
+        extra_scripts =
+            pre:../lsh-core/tools/platformio_lsh_static_config.py
+            scripts/setup_build_actions.py
+
+        [common_release]
+        extends = common_base
+        """,
+        encoding="utf-8",
+    )
+    core_tool = tmp_path / "lsh-core" / "tools" / "generate_lsh_static_config.py"
+    core_tool.parent.mkdir(parents=True)
+    core_tool.write_text("", encoding="utf-8")
+    (core_tool.parent / "platformio_lsh_static_config.py").write_text("", encoding="utf-8")
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+        tool = "lsh-core/tools/generate_lsh_static_config.py"
+
+        [platformio]
+        core_project = "lsh-core-personal"
+        core_base_env = "common_release"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _starter_core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    assert "extra_scripts" not in core_ini
+    assert "pre:../lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
+
+
+def test_stack_config_applies_bridge_define_overrides_without_duplicate_flags(
+    tmp_path: Path,
+) -> None:
+    """Typed bridge defaults replace generated defines before raw flags append."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [bridge.defaults.defines]
+        CONFIG_MAX_ACTUATORS = "8U"
+        CONFIG_MSG_PACK_MQTT = false
+        CONFIG_ARDCOM_SERIAL_RX_PIN = "16U"
+
+        LSH_DEBUG = true
+
+        [bridge.defaults.build_flags]
+        append = ["-Wall"]
+        """,
+    )
+
+    stack = compose_stack(load_stack_config(config_path), _core_export())
+    flags = stack["bridge"]["platformioBuildFlags"]
+
+    assert "-DCONFIG_MAX_ACTUATORS=1U" not in flags
+    assert flags.count("-DCONFIG_MAX_ACTUATORS=8U") == 1
+    assert "-DCONFIG_MSG_PACK_MQTT" not in flags
+    assert "-DCONFIG_ARDCOM_SERIAL_RX_PIN=16U" in flags
+    assert "-DLSH_DEBUG" in flags
+    assert flags[-1] == "-Wall"
+
+
+def test_stack_config_rejects_bridge_device_build_override_section(tmp_path: Path) -> None:
+    """One wide bridge firmware has only stack-wide bridge build overrides."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [bridge.devices.panel.defines]
+        LSH_DEBUG = true
+        """,
+    )
+
+    with pytest.raises(StackConfigError, match="bridge contains unknown keys: devices"):
+        load_stack_config(config_path)
+
+
+def test_stack_config_rejects_homie_firmware_version_as_stack_option(
+    tmp_path: Path,
+) -> None:
+    """The bridge firmware version is not a normal stack-level user option."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [bridge.defaults.defines]
+        CONFIG_HOMIE_FIRMWARE_VERSION = '\\"custom\\"'
+        """,
+    )
+
+    with pytest.raises(StackConfigError, match="follows the bridge firmware"):
+        load_stack_config(config_path)
+
+
+def test_lsh_stack_new_creates_personal_project_shape(tmp_path: Path) -> None:
+    """A new user gets source files, disposable output dir and persistent overrides."""
+    project = tmp_path / "my-lsh-installation"
+
+    assert cli.main(["new", str(project)]) == 0
+
+    assert (project / "README.md").is_file()
+    assert (project / "lsh_stack.toml").is_file()
+    assert (project / "core" / "lsh_devices.toml").is_file()
+    assert (project / "core" / "platformio.ini").is_file()
+    assert (project / "bridge" / "platformio.ini").is_file()
+    assert (project / "generated").is_dir()
+    assert (project / "overrides" / "README.md").is_file()
+    assert (project / "core" / "src" / "main.cpp").is_file()
+    assert (project / "bridge" / "src" / "main.cpp").is_file()
+    assert (project / "core" / "scripts" / "lsh_core_bootstrap.py").is_file()
+    assert (project / "generated" / "platformio-core.ini").is_file()
+    assert (project / "generated" / "platformio-bridge.ini").is_file()
+
+    bootstrap_core = (project / "generated" / "platformio-core.ini").read_text(encoding="utf-8")
+    assert "extra_scripts = pre:scripts/lsh_core_bootstrap.py" in bootstrap_core
+    core_platformio = (project / "core" / "platformio.ini").read_text(encoding="utf-8")
+    assert "Optional stack overlay" in core_platformio
+    assert "[env:core_panel]" in core_platformio
+    bridge_platformio = (project / "bridge" / "platformio.ini").read_text(encoding="utf-8")
+    assert "Optional stack overlay" in bridge_platformio
+    assert "[lsh_bridge_standalone_contract]" in bridge_platformio
+    assert "[env:bridge]" in bridge_platformio
+
+    stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
+    assert 'devices = "core/lsh_devices.toml"' in stack_toml
+    assert 'core_project = "core"' in stack_toml
+    assert 'bridge_project = "bridge"' in stack_toml
+    assert 'expose_state_context = "global"' in stack_toml
+    assert 'expose_config_context = "global"' in stack_toml
+    assert 'name = "littlefs_debug"' in stack_toml
+    assert 'name = "littlefs_migration_debug"' in stack_toml
+
+    readme = (project / "README.md").read_text(encoding="utf-8")
+    assert "lsh-stack.py generate lsh_stack.toml --output-dir generated" in readme
+    assert "uv run" not in readme
+
+
+def test_lsh_stack_new_supports_documented_first_use_without_sibling_repos(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fresh project can be parsed before any generated file regeneration."""
+    platformio = shutil.which("platformio")
+    if platformio is None:
+        pytest.skip("PlatformIO is required for the first-use bootstrap smoke test.")
+
+    project = tmp_path / "fresh-installation"
+    assert cli.main(["new", str(project)]) == 0
+
+    core_config = subprocess.run(  # noqa: S603 - executable comes from shutil.which in test env.
+        [platformio, "project", "config"],
+        cwd=project / "core",
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert core_config.returncode == 0, core_config.stderr + core_config.stdout
+    assert "env:core_panel" in core_config.stdout
+    assert "ProjectEnvsNotAvailableError" not in core_config.stderr
+
+    bridge_config = subprocess.run(  # noqa: S603 - executable comes from shutil.which in test env.
+        [platformio, "project", "config"],
+        cwd=project / "bridge",
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert bridge_config.returncode == 0, bridge_config.stderr + bridge_config.stdout
+    assert "env:bridge" in bridge_config.stdout
+    assert "env:bridge_littlefs" in bridge_config.stdout
+    assert "ProjectEnvsNotAvailableError" not in bridge_config.stderr
+
+    core_tool = project / "core" / ".pio" / "libdeps" / "core_panel" / "lsh-core" / "tools"
+    core_tool.mkdir(parents=True)
+    (core_tool / "generate_lsh_static_config.py").write_text(
+        "import json\nprint(" + repr(json.dumps(_starter_core_export())) + ")\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(project)
+    assert cli.main(["generate", "lsh_stack.toml", "--output-dir", "generated"]) == 0
+
+    generated_core = (project / "generated" / "platformio-core.ini").read_text(encoding="utf-8")
+    assert "extra_scripts = pre:.pio/libdeps/core_panel/lsh-core/tools" in generated_core
+    assert "custom_lsh_config = lsh_devices.toml" in generated_core
+    generated_bridge = (project / "generated" / "platformio-bridge.ini").read_text(encoding="utf-8")
+    assert "[env:bridge_littlefs_debug]" in generated_bridge
+    assert "[env:bridge_littlefs_migration_debug]" in generated_bridge
+    generated_readme = (project / "generated" / "README.generated.md").read_text(encoding="utf-8")
+    assert "OTA custom targets are not generated until" in generated_readme
+    assert "LSH OTA <device>" not in generated_readme
+    assert "bridge_batch" in generated_readme
+
+
+def test_lsh_stack_explain_reports_one_device(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The explain command shows the generated firmware and runtime contract."""
+    config_path = _write_stack_config(tmp_path, "[core]\ndevices = 'lsh_devices.toml'\n")
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    monkeypatch.setattr(cli, "_compose", lambda _path, _tool: (config, stack))
+
+    assert cli.main(["explain", str(config_path), "panel"]) == 0
+
+    output = capsys.readouterr().out
+    assert "controller environment: core_panel" in output
+    assert "bridge firmware environment: bridge" in output
+    assert "bridge OTA target: LSH OTA panel" in output
+    assert "coordinator systemConfig entry" in output
+
+
+def test_lsh_stack_doctor_does_not_warn_for_separate_platformio_projects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A stack-only repo should not be told to create a local PlatformIO project."""
+    (tmp_path / "lsh-core-personal").mkdir()
+    (tmp_path / "lsh-core-personal" / "platformio.ini").write_text(
+        """
+        [platformio]
+        extra_configs = ../generated/platformio-core.ini
+        """,
+        encoding="utf-8",
+    )
+    (tmp_path / "lsh-bridge-personal").mkdir()
+    (tmp_path / "lsh-bridge-personal" / "platformio.ini").write_text(
+        """
+        [platformio]
+        extra_configs = ../generated/platformio-bridge.ini
+        """,
+        encoding="utf-8",
+    )
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated" / "platformio-core.ini").write_text("", encoding="utf-8")
+    (tmp_path / "generated" / "platformio-bridge.ini").write_text("", encoding="utf-8")
+    (tmp_path / "overrides").mkdir()
+
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "lsh-core-personal"
+        bridge_project = "lsh-bridge-personal"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    monkeypatch.setattr(cli, "_compose", lambda _path, _tool: (config, stack))
+
+    assert cli.main(["doctor", str(config_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "warnings:" not in output
+    assert "No stack configuration problems found." in output
+
+
+def test_lsh_stack_doctor_warns_when_platformio_does_not_include_generated_fragment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Doctor catches scaffold drift without mutating user-owned PlatformIO files."""
+    project = tmp_path / "install"
+    assert cli.main(["new", str(project)]) == 0
+    (project / "core" / "platformio.ini").write_text("[platformio]\n", encoding="utf-8")
+
+    config = load_stack_config(project / "lsh_stack.toml")
+    stack = compose_stack(config, _starter_core_export())
+    monkeypatch.setattr(cli, "_compose", lambda _path, _tool: (config, stack))
+
+    assert cli.main(["doctor", str(project / "lsh_stack.toml")]) == 0
+
+    output = capsys.readouterr().out
+    assert "warnings:" in output
+    assert "core platformio.ini should include `../generated/platformio-core.ini`" in output
 
 
 def test_stack_config_rejects_clicks_not_declared_as_network_clicks(tmp_path: Path) -> None:
@@ -198,6 +860,59 @@ def _core_export() -> dict[str, object]:
                     "clickType": "long",
                 }
             ],
+        },
+        "nodeRed": {"lshLogic": {"protocol": "msgpack", "systemConfigJson": "{}"}},
+        "footprint": {},
+    }
+
+
+def _starter_core_export() -> dict[str, object]:
+    return {
+        "schema": "lsh-stack-config/v1",
+        "source": "lsh_devices.toml",
+        "lshBasePath": "LSH/",
+        "homieBasePath": "homie/5/",
+        "serviceTopic": "LSH/Node-RED/SRV",
+        "protocol": "msgpack",
+        "bridge": {
+            "devices": {
+                "panel": {
+                    "deviceName": "panel",
+                    "platformioBuildFlags": [
+                        "-DCONFIG_MAX_ACTUATORS=1U",
+                        "-DCONFIG_MAX_BUTTONS=1U",
+                        "-DCONFIG_MAX_NAME_LENGTH=5U",
+                        "-DCONFIG_MSG_PACK_ARDUINO",
+                    ],
+                    "topics": {},
+                }
+            }
+        },
+        "controllers": {
+            "panel": {
+                "deviceName": "panel",
+                "actuators": [{"name": "light", "id": 1}],
+                "buttons": [{"name": "wall_button", "id": 1}],
+                "indicators": [],
+            }
+        },
+        "coordinator": {
+            "options": {
+                "lshBasePath": "LSH/",
+                "homieBasePath": "homie/5/",
+                "serviceTopic": "LSH/Node-RED/SRV",
+                "protocol": "msgpack",
+                "subscriptionQos": {
+                    "bridge": 2,
+                    "conf": 2,
+                    "events": 2,
+                    "homieState": 1,
+                    "state": 2,
+                },
+            },
+            "systemConfig": {"devices": [{"name": "panel"}]},
+            "subscriptions": {},
+            "unmappedNetworkClicks": [],
         },
         "nodeRed": {"lshLogic": {"protocol": "msgpack", "systemConfigJson": "{}"}},
         "footprint": {},

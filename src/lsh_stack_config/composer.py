@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from .errors import StackConfigError
 from .models import (
     ActorTarget,
+    BridgeEnvironmentOverrides,
+    BridgeSettings,
     CoordinatorSettings,
+    DefineValue,
     JsonObject,
     MqttSettings,
     NetworkClick,
@@ -25,6 +29,9 @@ _TOPIC_SUFFIXES = {
     "events": "events",
     "bridge": "bridge",
 }
+_DEFINE_FLAG_RE = re.compile(r"^-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=.*)?$")
+_DEFINE_VALUE_RE = re.compile(r"^-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$")
+_UINT_LITERAL_RE = re.compile(r"^([0-9]+)U?$")
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,14 @@ class _Click:
     button: str
     button_id: int
     click_type: Literal["long", "superLong"]
+
+
+@dataclass
+class _WideBridgeFlagState:
+    order: list[tuple[str, str]]
+    seen_raw: set[str]
+    define_values: dict[str, str | None]
+    max_define_values: dict[str, int]
 
 
 def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
@@ -57,18 +72,242 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
     system_config = _build_system_config(config.network_clicks, stack, device_names)
 
     _apply_mqtt_settings(stack, config.mqtt, protocol, device_names)
+    _apply_bridge_overrides(stack, config.bridge)
+    _apply_bridge_wide_build_flags(stack)
     _apply_coordinator_settings(stack, config.coordinator, system_config)
     _apply_node_red_settings(stack, config.node_red, config.coordinator, system_config)
 
     stack["schema"] = "lsh-stack-config/v1"
     stack["stackSource"] = str(config.path)
     stack["transport"] = {"mode": config.transport.mode}
+    stack["platformio"] = {
+        "coreProject": str(config.platformio.core_project)
+        if config.platformio.core_project is not None
+        else None,
+        "bridgeProject": str(config.platformio.bridge_project)
+        if config.platformio.bridge_project is not None
+        else None,
+        "coreExtraScript": str(config.platformio.core_extra_script)
+        if config.platformio.core_extra_script is not None
+        else None,
+        "coreBaseEnv": config.platformio.core_base_env,
+        "bridgeBaseEnv": config.platformio.bridge_base_env,
+        "coreEnvPrefix": config.platformio.core_env_prefix,
+        "bridgeEnvPrefix": config.platformio.bridge_env_prefix,
+        "bridgeProfiles": [
+            {
+                "name": profile.name,
+                "extends": profile.base_env,
+                "default": profile.default,
+                "ota": profile.ota,
+            }
+            for profile in config.platformio.bridge_profiles
+        ],
+    }
+    stack["deploy"] = {
+        "bridge": {
+            "defaultMethod": config.deploy.bridge.default_method,
+            "usbPortTemplate": config.deploy.bridge.usb_port_template,
+            "otaCommandTemplate": config.deploy.bridge.ota_command_template,
+            "ota": (
+                {
+                    "script": config.deploy.bridge.ota.script,
+                    "python": config.deploy.bridge.ota.python,
+                    "brokerHost": config.deploy.bridge.ota.broker_host,
+                    "brokerPort": config.deploy.bridge.ota.broker_port,
+                    "brokerUsername": config.deploy.bridge.ota.broker_username,
+                    "brokerUsernameEnv": config.deploy.bridge.ota.broker_username_env,
+                    "brokerPassword": config.deploy.bridge.ota.broker_password,
+                    "brokerPasswordEnv": config.deploy.bridge.ota.broker_password_env,
+                    "baseTopic": config.deploy.bridge.ota.base_topic,
+                    "homieVersion": config.deploy.bridge.ota.homie_version,
+                    "timeout": config.deploy.bridge.ota.timeout,
+                    "brokerTlsCacert": config.deploy.bridge.ota.broker_tls_cacert,
+                    "brokerTlsCertfile": config.deploy.bridge.ota.broker_tls_certfile,
+                    "brokerTlsKeyfile": config.deploy.bridge.ota.broker_tls_keyfile,
+                    "brokerTlsInsecure": config.deploy.bridge.ota.broker_tls_insecure,
+                    "extraArgs": list(config.deploy.bridge.ota.extra_args),
+                }
+                if config.deploy.bridge.ota is not None
+                else None
+            ),
+            "devices": [
+                {
+                    "device": target.device,
+                    "usbPort": target.usb_port,
+                    "otaCommand": target.ota_command,
+                }
+                for target in config.deploy.bridge.devices
+            ],
+        }
+    }
+    stack["bridgeOverrides"] = _bridge_override_summary(config.bridge)
     stack["externalActors"] = [
         {"name": actor.name, **({"stateKey": actor.state_key} if actor.state_key else {})}
         for actor in config.external_actors
     ]
     stack["mappedNetworkClicks"] = _mapped_click_summary(config.network_clicks)
     return stack
+
+
+def _apply_bridge_overrides(stack: JsonObject, bridge_settings: BridgeSettings) -> None:
+    bridge_devices = _object(
+        _object(stack.get("bridge"), "bridge").get("devices"), "bridge.devices"
+    )
+    for device_key, raw_device in bridge_devices.items():
+        device = _object(raw_device, f"bridge.devices.{device_key}")
+        flags = _string_list(
+            device.get("platformioBuildFlags"),
+            f"bridge.devices.{device_key}.platformioBuildFlags",
+        )
+        device["platformioBuildFlags"] = _merge_bridge_flags(
+            flags,
+            bridge_settings.defaults,
+        )
+
+
+def _merge_bridge_flags(
+    generated_flags: list[str],
+    defaults: BridgeEnvironmentOverrides,
+) -> list[str]:
+    define_values: dict[str, DefineValue] = {
+        override.name: override.value for override in defaults.defines
+    }
+
+    blocked_names = set(define_values)
+    merged = [
+        flag
+        for flag in generated_flags
+        if (define_name := _define_flag_name(flag)) is None or define_name not in blocked_names
+    ]
+    for name, value in define_values.items():
+        flag = _define_override_flag(name, value)
+        if flag is not None:
+            merged.append(flag)
+    merged.extend(defaults.build_flags.append)
+    return merged
+
+
+def _apply_bridge_wide_build_flags(stack: JsonObject) -> None:
+    """Collapse per-device bridge limits into one stack-wide firmware profile."""
+    bridge = _object(stack.get("bridge"), "bridge")
+    bridge_devices = _object(bridge.get("devices"), "bridge.devices")
+    flags_by_device: dict[str, list[str]] = {}
+    for device_key, raw_device in bridge_devices.items():
+        device = _object(raw_device, f"bridge.devices.{device_key}")
+        flags_by_device[device_key] = _string_list(
+            device.get("platformioBuildFlags"),
+            f"bridge.devices.{device_key}.platformioBuildFlags",
+        )
+
+    wide_flags = _wide_bridge_flags(flags_by_device)
+    bridge["platformioBuildFlags"] = wide_flags
+    bridge["buildProfile"] = {
+        "mode": "wide",
+        "sourceDevices": list(flags_by_device),
+        "rule": "CONFIG_MAX_* defines use the maximum value across stack devices.",
+    }
+
+    for device_key, raw_device in bridge_devices.items():
+        device = _object(raw_device, f"bridge.devices.{device_key}")
+        device["platformioBuildFlags"] = list(wide_flags)
+
+
+def _wide_bridge_flags(flags_by_device: dict[str, list[str]]) -> list[str]:
+    state = _WideBridgeFlagState(
+        order=[],
+        seen_raw=set(),
+        define_values={},
+        max_define_values={},
+    )
+
+    for device, flags in flags_by_device.items():
+        for flag in flags:
+            _collect_wide_bridge_flag(state, device, flag)
+
+    wide_flags: list[str] = []
+    for kind, value in state.order:
+        if kind == "raw":
+            wide_flags.append(value)
+        elif kind == "max_define":
+            wide_flags.append(f"-D{value}={state.max_define_values[value]}U")
+        else:
+            define_value = state.define_values[value]
+            wide_flags.append(f"-D{value}" if define_value is None else f"-D{value}={define_value}")
+    return wide_flags
+
+
+def _collect_wide_bridge_flag(state: _WideBridgeFlagState, device: str, flag: str) -> None:
+    parsed = _parse_define_flag(flag)
+    if parsed is None:
+        if flag not in state.seen_raw:
+            state.seen_raw.add(flag)
+            state.order.append(("raw", flag))
+        return
+
+    name, value = parsed
+    uint_value = _uint_define_value(value)
+    if name.startswith("CONFIG_MAX_") and uint_value is not None:
+        if name not in state.max_define_values:
+            state.order.append(("max_define", name))
+            state.max_define_values[name] = uint_value
+        else:
+            state.max_define_values[name] = max(state.max_define_values[name], uint_value)
+        return
+
+    if name in state.define_values:
+        if state.define_values[name] != value:
+            raise StackConfigError(
+                "bridge devices cannot be collapsed into one wide firmware because "
+                f"{name} differs on {device}."
+            )
+        return
+
+    state.define_values[name] = value
+    state.order.append(("define", name))
+
+
+def _parse_define_flag(flag: str) -> tuple[str, str | None] | None:
+    match = _DEFINE_VALUE_RE.fullmatch(flag.strip())
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _uint_define_value(value: str | None) -> int | None:
+    if value is None:
+        return None
+    match = _UINT_LITERAL_RE.fullmatch(value.strip())
+    return int(match.group(1)) if match is not None else None
+
+
+def _define_flag_name(flag: str) -> str | None:
+    match = _DEFINE_FLAG_RE.fullmatch(flag.strip())
+    return match.group(1) if match is not None else None
+
+
+def _define_override_flag(name: str, value: DefineValue) -> str | None:
+    if isinstance(value, bool):
+        return f"-D{name}" if value else None
+    return f"-D{name}={value}"
+
+
+def _bridge_override_summary(bridge_settings: BridgeSettings) -> JsonObject:
+    return {
+        "precedence": [
+            "generated bridge flags",
+            "bridge.defaults.defines",
+            "bridge.defaults.build_flags.append",
+        ],
+        "defaults": _override_summary(bridge_settings.defaults),
+    }
+
+
+def _override_summary(overrides: BridgeEnvironmentOverrides) -> JsonObject:
+    return {
+        "defines": {item.name: item.value for item in overrides.defines},
+        "buildFlagsAppend": list(overrides.build_flags.append),
+    }
 
 
 def _resolve_mqtt_protocol(mqtt: MqttSettings, stack: JsonObject) -> Literal["json", "msgpack"]:

@@ -13,6 +13,8 @@ place.
 - **Understanding the runtime model**: open [REFERENCE_STACK.md](./REFERENCE_STACK.md).
 - **Ready to run a first lab**: follow [GETTING_STARTED.md](./GETTING_STARTED.md).
 - **Generating a finished deployment config**: use [STACK_CONFIG.md](./STACK_CONFIG.md).
+- **Maintaining the stack generator**: read
+  [GENERATOR_ARCHITECTURE.md](./GENERATOR_ARCHITECTURE.md).
 - **Debugging live behavior**: use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - **Planning the hardware layer**: read [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md).
 - **Unfamiliar terms**: skim [GLOSSARY.md](./GLOSSARY.md).
@@ -67,6 +69,8 @@ configuration and change one layer at a time.
   [REFERENCE_STACK.md](./REFERENCE_STACK.md)
 - End-to-end stack TOML, generated bridge flags, coordinator config and Node-RED config:
   [STACK_CONFIG.md](./STACK_CONFIG.md)
+- Stack generator module boundaries and maintenance rules:
+  [GENERATOR_ARCHITECTURE.md](./GENERATOR_ARCHITECTURE.md)
 - Shared quality-gate policy for public repositories:
   [QUALITY_GATE.md](./QUALITY_GATE.md)
 - Repository quality gate for docs and the stack composer:

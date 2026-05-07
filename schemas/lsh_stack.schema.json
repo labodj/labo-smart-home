@@ -65,6 +65,88 @@
         "other_actors_context": { "enum": ["flow", "global"] }
       }
     },
+    "platformio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "core_project": { "type": "string", "minLength": 1 },
+        "bridge_project": { "type": "string", "minLength": 1 },
+        "core_extra_script": { "type": "string", "minLength": 1 },
+        "core_base_env": { "type": "string", "minLength": 1 },
+        "bridge_base_env": { "type": "string", "minLength": 1 },
+        "core_env_prefix": { "type": "string", "minLength": 1 },
+        "bridge_env_prefix": { "type": "string", "minLength": 1 },
+        "bridge_profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bridgeProfile" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bridge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_method": { "enum": ["usb", "ota"] },
+            "usb_port_template": { "type": "string", "minLength": 1 },
+            "ota_command_template": { "type": "string", "minLength": 1 },
+            "ota": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "script": { "type": "string", "minLength": 1 },
+                "python": { "type": "string", "minLength": 1 },
+                "broker_host": { "type": "string", "minLength": 1 },
+                "broker_port": { "type": "integer", "minimum": 1 },
+                "broker_username": { "type": "string", "minLength": 1 },
+                "broker_username_env": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "broker_password": { "type": "string", "minLength": 1 },
+                "broker_password_env": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "base_topic": { "type": "string", "pattern": ".+/$" },
+                "homie_version": { "enum": ["3", "4", "5"] },
+                "timeout": { "type": "integer", "minimum": 1 },
+                "broker_tls_cacert": { "type": "string", "minLength": 1 },
+                "broker_tls_certfile": { "type": "string", "minLength": 1 },
+                "broker_tls_keyfile": { "type": "string", "minLength": 1 },
+                "broker_tls_insecure": { "type": "boolean" },
+                "extra_args": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "devices": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "usb_port": { "type": "string", "minLength": 1 },
+                  "ota_command": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaults": { "$ref": "#/$defs/bridgeOverrides" }
+      }
+    },
     "external_actors": {
       "type": "object",
       "additionalProperties": {
@@ -93,6 +175,43 @@
         { "type": "string", "minLength": 1 },
         { "type": "integer", "minimum": 1, "maximum": 255 }
       ]
+    },
+    "defineValue": {
+      "oneOf": [{ "type": "boolean" }, { "type": "integer" }, { "type": "string" }]
+    },
+    "defines": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/defineValue" }
+    },
+    "bridgeBuildFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "append": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "bridgeOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defines": { "$ref": "#/$defs/defines" },
+        "build_flags": { "$ref": "#/$defs/bridgeBuildFlags" }
+      }
+    },
+    "bridgeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "extends"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "extends": { "type": "string", "minLength": 1 },
+        "default": { "type": "boolean" },
+        "ota": { "type": "boolean" }
+      }
     },
     "actor": {
       "type": "object",

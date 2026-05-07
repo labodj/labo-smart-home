@@ -28,6 +28,37 @@ graph LR
   Protocol -. aligns .-> NodeRed
 ```
 
+## Pick One Setup Path
+
+For a first full-stack installation, prefer the configurator path. You describe the
+controller once in `core/lsh_devices.toml`, describe the installation in
+`lsh_stack.toml`, then let `lsh-stack generate` write the PlatformIO fragments,
+coordinator config, Node-RED values and deployment commands. This path is easier to
+check because the repeated names, topics and build flags come from one place.
+
+Use the manual path when you are adopting only one piece of LSH, or when an existing
+project already has hand-maintained PlatformIO and orchestration files. The same rules
+still apply, but you copy the values yourself: controller topology in `lsh-core`, bridge
+build flags and MQTT/Homie settings in `lsh-bridge`, and matching device names in the
+coordinator or Node-RED node.
+
+Generated files are not a second source of truth. Regenerate them whenever the TOML
+changes, and keep hand-written notes or overrides outside `generated/`.
+
+## Who Does What
+
+| Piece                        | What you edit first                 | Why it exists                                            |
+| ---------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `lsh-core`                   | `core/lsh_devices.toml`             | Keeps wired inputs, outputs and local behavior working.  |
+| `lsh-bridge`                 | generated or manual build flags     | Publishes controller state and accepts commands on MQTT. |
+| MQTT broker                  | broker host, auth and topic choices | Carries LSH and Homie messages between every runtime.    |
+| coordinator or Node-RED node | generated `systemConfig` values     | Adds behavior that needs more than one controller.       |
+| `lsh-protocol`               | normally nothing in an installation | Keeps compact keys and payload shapes aligned.           |
+| `homie-esp8266` OTA helper   | generated `bridge-ota.json` or CLI  | Sends bridge firmware OTA over MQTT/Homie.               |
+
+Start by making one row healthy at a time. Do not rename topics, switch codecs and add
+distributed click logic in the same pass.
+
 ## What You Need for a First Full-Stack Lab
 
 For the public reference path you need:
@@ -50,14 +81,15 @@ For the reference electrical pattern used by the current examples:
 
 For the exact panel pattern, read [HARDWARE_OVERVIEW.md](./HARDWARE_OVERVIEW.md).
 
-For the controller firmware, start from `lsh-core` v3.0.0 or newer. The documented
-configuration path is TOML-based: device topology lives in `lsh_devices.toml`, and
-PlatformIO runs a pre-build generator before compiling.
+For the controller firmware, start from `lsh-core` v3.0.0 or newer. In the normal user
+path, your personal project consumes `lsh-core` and `lsh-bridge` as PlatformIO
+libraries. Device topology lives in `lsh_devices.toml`, and PlatformIO runs the
+controller pre-build generator before compiling.
 
-For a finished bridge, coordinator and Node-RED configuration, add `lsh_stack.toml`
-after the controller profile is valid. The stack composer reads the controller contract
-and generates deployment artifacts without mixing MQTT or Node-RED settings into the
-firmware TOML.
+For finished bridge firmware fragments, coordinator configuration and Node-RED node
+settings, add `lsh_stack.toml` after the controller profile is valid. The stack composer
+reads the controller contract and generates deployment artifacts without mixing MQTT or
+Node-RED settings into the firmware TOML.
 
 If you also want entities in Home Assistant, add an external generic Homie discovery
 tool after the LSH path is healthy:
@@ -125,7 +157,74 @@ examples.
 If a term feels overloaded, skim [GLOSSARY.md](./GLOSSARY.md). If you are still deciding
 whether to adopt the stack at all, read [FAQ.md](./FAQ.md) before moving on.
 
-### Step 2. Start from the controller example
+### Step 2. Create one personal project
+
+Create a starter project first:
+
+If `lsh-stack` is already installed:
+
+```bash
+lsh-stack new my-lsh-installation
+cd my-lsh-installation
+```
+
+From a checkout of `labo-smart-home`, use the standard Python launcher script. On
+Windows, use `py` instead of `python` if that is how Python is installed:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation
+cd my-lsh-installation
+```
+
+The files to edit are `core/lsh_devices.toml`, `lsh_stack.toml` and, for local
+PlatformIO base settings, `core/platformio.ini` or `bridge/platformio.ini`. The
+`generated/` directory is disposable. Keep persistent manual notes or expert extensions
+in `overrides/`.
+
+The starter project includes bootstrap `generated/platformio-core.ini` and
+`generated/platformio-bridge.ini` files. They exist so PlatformIO can see the first
+environments and install packages before the real generator has run.
+
+Build the starter controller once with either workflow:
+
+- VSCode: open `core/` with the PlatformIO extension and run `core_panel` -> Build.
+- CLI, when `platformio` is available: `platformio run -d core -e core_panel`.
+
+Generate the first output set:
+
+```bash
+lsh-stack generate lsh_stack.toml --output-dir generated
+lsh-stack check lsh_stack.toml
+```
+
+When working from a checkout and `lsh-stack` is not installed, use:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py generate lsh_stack.toml --output-dir generated
+python /path/to/labo-smart-home/lsh-stack.py check lsh_stack.toml
+```
+
+After generation, continue from VSCode PlatformIO Project Tasks or from the PlatformIO
+CLI. Both paths use the same `core/` and `bridge/` projects and the same generated
+environments.
+
+The generated files give you bridge PlatformIO flags, controller and bridge
+environments, coordinator `systemConfig`, Node-RED `lsh-logic` settings and exact
+build/upload commands derived from the same controller profile.
+
+If generation fails, run:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py doctor lsh_stack.toml
+```
+
+To inspect one controller before flashing it:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py explain lsh_stack.toml panel
+```
+
+### Step 3. Compare with the controller example
 
 Open:
 
@@ -133,7 +232,8 @@ Open:
 - [`lsh-core/examples/multi-device-project/lsh_devices.toml`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/lsh_devices.toml)
 - [`lsh-core/examples/multi-device-project/README.md`](https://github.com/labodj/lsh-core/blob/main/examples/multi-device-project/README.md)
 
-Use that example as the baseline for your controller bring-up.
+Use that example as the baseline when you want more devices, more relays or
+network-click behavior than the starter project includes.
 
 Important example profiles:
 
@@ -143,27 +243,17 @@ Important example profiles:
 If you want the simplest first controller test, start from the leaner profile and only
 add distributed click logic after the base controller/bridge link is healthy.
 
-A useful controller-only build command is:
+A useful controller-only build command for automation is:
 
 ```bash
 platformio run -d examples/multi-device-project -e J1_release
 ```
 
-When adapting the example, edit `lsh_devices.toml` first. Keep the generated headers and
-`platformio.ini` layout close to the public example until the first device builds,
-publishes details, and reports actuator state.
+When adapting the example, edit `lsh_devices.toml` first. Keep generated headers and
+machine output inside `generated/` until the first device builds, publishes details and
+reports actuator state.
 
-Then create the stack file:
-
-```bash
-uv run lsh-stack init
-uv run lsh-stack generate lsh_stack.toml --output-dir generated
-```
-
-The generated files give you bridge PlatformIO flags, coordinator `systemConfig` and
-Node-RED `lsh-logic` settings derived from the same controller profile.
-
-### Step 3. Start from the bridge example
+### Step 4. Compare with the bridge example
 
 Open:
 
@@ -181,7 +271,7 @@ This example already reflects the public topic profile:
 For the first pass, keep topic names, service topic, and codec choices unchanged unless
 your hardware or deployment requires a change.
 
-### Step 4. Bring up MQTT and orchestration
+### Step 5. Bring up MQTT and orchestration
 
 Pick the orchestration surface that matches how you want to operate the stack.
 
@@ -196,8 +286,13 @@ Node-RED-managed MQTT nodes:
 - [`node-red-contrib-lsh-logic` README](https://github.com/labodj/node-red-contrib-lsh-logic)
 - [`examples/lsh-logic-example.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/lsh-logic-example.json)
 
-For Node-RED `v3.0.0+`, paste the system config JSON directly into the node editor. The
-reusable examples are:
+For a stack generated with `lsh-stack`, open `generated/node-red-setup.md` and follow
+the GUI checklist. It tells you exactly what to paste into the `lsh-logic` node and
+which settings to select, while the surrounding MQTT nodes remain normal Node-RED
+configuration.
+
+For manual experiments, Node-RED `v3.0.0+` can still paste system config JSON directly
+into the node editor. The reusable examples are:
 
 - [`examples/inline-config.minimal.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.minimal.json)
 - [`examples/inline-config.multi-device.json`](https://github.com/labodj/node-red-contrib-lsh-logic/blob/main/examples/inline-config.multi-device.json)
@@ -209,7 +304,7 @@ The example flow already shows the intended shape:
 - MQTT-out for LSH commands
 - debug outputs for commands, alerts, topics, and raw traffic
 
-### Step 5. Verify the first healthy signs
+### Step 6. Verify the first healthy signs
 
 When the stack is lined up, the first useful things to look for are:
 
@@ -223,7 +318,7 @@ When the stack is lined up, the first useful things to look for are:
 If one of those signals is missing, use [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 before changing more variables.
 
-### Step 6. Add richer behavior after the base path works
+### Step 7. Add richer behavior after the base path works
 
 Once the base stack is healthy, expand in this order:
 

@@ -16,8 +16,8 @@ orchestration layer can run in **Node-RED** or as a headless **Node.js coordinat
 
 This repository is the public entry point for LSH. It shows how the pieces fit together,
 where each component lives, which docs to read next, and now also hosts the stack
-composer that turns controller contracts into bridge, coordinator and Node-RED
-configuration.
+composer that turns controller contracts into bridge firmware fragments, coordinator
+configuration and Node-RED node settings.
 
 ## What LSH Is
 
@@ -30,6 +30,12 @@ components.
 The public repositories are installable packages rather than only source snapshots: the
 controller and bridge libraries are available through PlatformIO, and the orchestration
 layer can be used either from Node-RED or as a standalone Node.js runtime.
+
+You can adopt the stack in two ways. The recommended first route is the stack
+configurator: edit one controller TOML file, edit one stack TOML file, then generate the
+PlatformIO fragments and orchestration settings. The manual route is still available for
+existing projects, but then you keep controller, bridge, MQTT, coordinator and Node-RED
+values aligned yourself.
 
 LSH is not a packaged plug-and-play smart-home product or the simplest path for a few
 Wi-Fi bulbs. It fits projects whose maintainers are comfortable with electrical
@@ -172,8 +178,56 @@ lookup tables.
 
 The public stack composer adds the deployment layer on top of that controller profile.
 `lsh_stack.toml` keeps MQTT codec choices, Node-RED context exports and distributed
-network-click actor targets outside the firmware TOML, while still generating a finished
-bridge/coordinator/Node-RED configuration.
+network-click actor targets outside the firmware TOML, while still generating the
+bridge/coordinator contract and exact Node-RED node settings. It also emits PlatformIO
+fragments for per-device controller environments and stack-wide bridge firmware
+profiles, so every bridge device can run the same selected bridge binary while keeping
+device-specific uploads as IDE targets.
+
+The normal starting point is one personal installation folder with two normal PlatformIO
+projects inside it:
+
+If `lsh-stack` is already installed:
+
+```bash
+lsh-stack new my-lsh-installation
+cd my-lsh-installation
+platformio run -d core -e core_panel  # optional CLI path when PlatformIO is in PATH
+lsh-stack generate lsh_stack.toml --output-dir generated
+```
+
+From a checkout of this repository, use the standard Python launcher script. On Windows,
+use `py` instead of `python` if that is how Python is installed:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation
+cd my-lsh-installation
+platformio run -d core -e core_panel  # optional CLI path when PlatformIO is in PATH
+python /path/to/labo-smart-home/lsh-stack.py generate lsh_stack.toml --output-dir generated
+```
+
+`new` writes `core/platformio.ini` and `bridge/platformio.ini` once, then leaves those
+manual files alone. They include disposable fragments from `generated/`, so PlatformIO
+can see the first environments before the first full generation. Use either VSCode with
+the PlatformIO extension or the `platformio` CLI if it is available. The `generate`
+command replaces only the files in `generated/`.
+
+For local or symlinked controller checkouts, set `[core].tool`; generated controller
+environments then use the matching local `platformio_lsh_static_config.py` instead of a
+`.pio/libdeps` path.
+
+Edit `core/lsh_devices.toml` and `lsh_stack.toml`; treat `generated/` as disposable;
+keep persistent manual extensions in `overrides/` or in the `core/` and `bridge/`
+PlatformIO files.
+
+For Node-RED, install `node-red-contrib-lsh-logic`, add the node to a flow and follow
+`generated/node-red-setup.md`. The generator gives exact copy-paste values for the
+`lsh-logic` node, while MQTT broker settings and the surrounding flow stay in Node-RED.
+
+For bridge builds and uploads, use the generated PlatformIO environments from the IDE or
+CLI. Profile tasks such as `bridge_littlefs` build one wide firmware shared by every
+bridge device. The same profile exposes `LSH OTA j1`, `LSH OTA j2` and `LSH OTA All`
+custom targets for Homie/MQTT OTA in the PlatformIO IDE.
 
 ## Public History
 

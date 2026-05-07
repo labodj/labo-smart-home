@@ -82,5 +82,4 @@ jobs:
           test -s "$tmpdir/lsh-stack-config.json"
           test -s "$tmpdir/system-config.json"
           test -s "$tmpdir/node-red-lsh-logic.json"
-          test -s "$tmpdir/bridge-platformio-flags/j1.txt"
-          test -s "$tmpdir/bridge-platformio-flags/j2.txt"
+          test -s "$tmpdir/bridge-platformio-flags/bridge.txt"

@@ -29,6 +29,13 @@ name = "labo-smart-home"
 version = "0.1.0"
 source = { editable = "." }
 
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
@@ -37,6 +44,12 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.6" },
+]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [

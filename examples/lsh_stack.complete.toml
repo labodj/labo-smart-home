@@ -26,13 +26,74 @@ other_devices_prefix = "other_devices"
 other_actors_topic = "home/lsh/other-actors"
 
 [node_red]
-expose_state_context = "none"
+expose_state_context = "global"
 expose_state_key = "lsh_state"
 export_topics = "flow"
 export_topics_key = "lsh_topics"
-expose_config_context = "none"
+expose_config_context = "global"
 expose_config_key = "lsh_config"
 other_actors_context = "global"
+
+[platformio]
+core_project = "../core"
+bridge_project = "../bridge"
+core_base_env = "env:release"
+bridge_base_env = "env:release"
+core_env_prefix = "core"
+bridge_env_prefix = "bridge"
+
+[[platformio.bridge_profiles]]
+name = "release"
+extends = "lsh_bridge_release"
+
+[[platformio.bridge_profiles]]
+name = "debug"
+extends = "lsh_bridge_debug"
+
+[[platformio.bridge_profiles]]
+name = "littlefs"
+extends = "lsh_bridge_littlefs"
+default = true
+
+[[platformio.bridge_profiles]]
+name = "littlefs_migration"
+extends = "lsh_bridge_littlefs_migration"
+
+[[platformio.bridge_profiles]]
+name = "littlefs_debug"
+extends = "lsh_bridge_littlefs_debug"
+
+[[platformio.bridge_profiles]]
+name = "littlefs_migration_debug"
+extends = "lsh_bridge_littlefs_migration_debug"
+
+[deploy.bridge]
+default_method = "ota"
+
+[deploy.bridge.ota]
+# lsh-stack writes generated/bridge-ota.json and passes it explicitly to
+# bridge-ota.py with --config, so the OTA command shows which defaults it uses.
+broker_host = "mqtt.example.local"
+broker_port = 1883
+broker_username = "homie"
+broker_password_env = "LSH_OTA_PASSWORD"
+# base_topic defaults to [mqtt].homie_base_path.
+homie_version = "5"
+timeout = 300
+
+[deploy.bridge.devices.j1]
+usb_port = "/dev/ttyUSB0"
+
+[deploy.bridge.devices.j2]
+usb_port = "/dev/ttyUSB1"
+
+[bridge.defaults.defines]
+CONFIG_ARDCOM_SERIAL_RX_PIN = "16U"
+CONFIG_ARDCOM_SERIAL_TX_PIN = "17U"
+LSH_DEBUG = true
+
+[bridge.defaults.build_flags]
+append = ["-Wall"]
 
 [external_actors.zigbee_table_lamp]
 state_key = "other_devices.zigbee_table_lamp.state"

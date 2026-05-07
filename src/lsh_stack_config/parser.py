@@ -11,17 +11,30 @@ from .errors import StackConfigError
 from .models import (
     ActorTarget,
     ActuatorRef,
+    BridgeBuildFlagOverrides,
+    BridgeDeploySettings,
+    BridgeDeployTarget,
+    BridgeEnvironmentOverrides,
+    BridgeOtaSettings,
+    BridgeProfileSettings,
+    BridgeSettings,
     ContextTarget,
     CoordinatorSettings,
     CoreSettings,
+    DefineOverride,
+    DefineValue,
+    DeploySettings,
     ExternalActor,
+    HomieVersion,
     MqttCodec,
     MqttSettings,
     NetworkClick,
     NodeRedSettings,
+    PlatformioSettings,
     StackConfig,
     TransportMode,
     TransportSettings,
+    UploadMethod,
 )
 
 TomlTable = dict[str, object]
@@ -30,8 +43,12 @@ _DURATION_RE = re.compile(r"^(?P<value>[0-9]+(?:\.[0-9]+)?)(?P<unit>ms|s|m|h)$")
 _CONTEXT_VALUES = {"none", "flow", "global"}
 _NODE_RED_ACTOR_CONTEXT_VALUES = {"flow", "global"}
 _MQTT_CODECS = {"auto", "json", "msgpack"}
+_HOMIE_VERSIONS = {"3", "4", "5"}
 _TRANSPORT_MODES = {"serial_bridge", "onboard_ethernet"}
 _CLICK_TYPES = {"long", "super_long"}
+_UPLOAD_METHODS = {"usb", "ota"}
+_DEFINE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_PART_COUNT = 2
 _UINT8_MAX = 255
 
@@ -56,6 +73,9 @@ def load_stack_config(path: Path) -> StackConfig:
             "mqtt",
             "coordinator",
             "node_red",
+            "platformio",
+            "deploy",
+            "bridge",
             "external_actors",
             "network_clicks",
         },
@@ -73,6 +93,12 @@ def load_stack_config(path: Path) -> StackConfig:
         mqtt=_parse_mqtt(_table(raw.get("mqtt", {}), "mqtt")),
         coordinator=_parse_coordinator(_table(raw.get("coordinator", {}), "coordinator")),
         node_red=_parse_node_red(_table(raw.get("node_red", {}), "node_red")),
+        platformio=_parse_platformio(
+            _table(raw.get("platformio", {}), "platformio"),
+            source.parent,
+        ),
+        deploy=_parse_deploy(_table(raw.get("deploy", {}), "deploy")),
+        bridge=_parse_bridge(_table(raw.get("bridge", {}), "bridge")),
         external_actors=_parse_external_actors(
             _table(raw.get("external_actors", {}), "external_actors")
         ),
@@ -179,7 +205,7 @@ def _parse_node_red(table: TomlTable) -> NodeRedSettings:
     )
     return NodeRedSettings(
         expose_state_context=_context(
-            table.get("expose_state_context", "none"),
+            table.get("expose_state_context", "global"),
             "node_red.expose_state_context",
         ),
         expose_state_key=_required_string(
@@ -192,7 +218,7 @@ def _parse_node_red(table: TomlTable) -> NodeRedSettings:
             "node_red.export_topics_key",
         ),
         expose_config_context=_context(
-            table.get("expose_config_context", "none"),
+            table.get("expose_config_context", "global"),
             "node_red.expose_config_context",
         ),
         expose_config_key=_required_string(
@@ -208,6 +234,294 @@ def _parse_node_red(table: TomlTable) -> NodeRedSettings:
             ),
         ),
     )
+
+
+def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
+    _reject_unknown(
+        table,
+        {
+            "core_project",
+            "bridge_project",
+            "core_extra_script",
+            "core_base_env",
+            "bridge_base_env",
+            "core_env_prefix",
+            "bridge_env_prefix",
+            "bridge_profiles",
+        },
+        "platformio",
+    )
+    bridge_profiles = tuple(
+        _parse_bridge_profile(raw_profile, index)
+        for index, raw_profile in enumerate(
+            _array(table.get("bridge_profiles", []), "platformio.bridge_profiles")
+        )
+    )
+    default_profiles = [profile.name for profile in bridge_profiles if profile.default]
+    if len(default_profiles) > 1:
+        defaults = ", ".join(default_profiles)
+        _fail(f"only one platformio.bridge_profiles entry can set default = true: {defaults}.")
+    return PlatformioSettings(
+        core_project=(
+            _path(table["core_project"], "platformio.core_project", base_dir)
+            if "core_project" in table and table["core_project"] is not None
+            else None
+        ),
+        bridge_project=(
+            _path(table["bridge_project"], "platformio.bridge_project", base_dir)
+            if "bridge_project" in table and table["bridge_project"] is not None
+            else None
+        ),
+        core_extra_script=(
+            _path(table["core_extra_script"], "platformio.core_extra_script", base_dir)
+            if "core_extra_script" in table and table["core_extra_script"] is not None
+            else None
+        ),
+        core_base_env=_required_string(
+            table.get("core_base_env", "env:release"),
+            "platformio.core_base_env",
+        ),
+        bridge_base_env=_required_string(
+            table.get("bridge_base_env", "env:release"),
+            "platformio.bridge_base_env",
+        ),
+        core_env_prefix=_required_string(
+            table.get("core_env_prefix", "core"), "platformio.core_env_prefix"
+        ),
+        bridge_env_prefix=_required_string(
+            table.get("bridge_env_prefix", "bridge"), "platformio.bridge_env_prefix"
+        ),
+        bridge_profiles=bridge_profiles,
+    )
+
+
+def _parse_bridge_profile(raw: object, index: int) -> BridgeProfileSettings:
+    path = f"platformio.bridge_profiles[{index}]"
+    table = _table(raw, path)
+    _reject_unknown(table, {"name", "extends", "default", "ota"}, path)
+    name = _required_string(table.get("name"), f"{path}.name")
+    if name in {"usb", "ota", "batch", "all"}:
+        _fail(f"{path}.name is reserved.")
+    return BridgeProfileSettings(
+        name=name,
+        base_env=_required_string(table.get("extends"), f"{path}.extends"),
+        default=_bool(table.get("default", False), f"{path}.default"),
+        ota=_bool(table.get("ota", True), f"{path}.ota"),
+    )
+
+
+def _parse_deploy(table: TomlTable) -> DeploySettings:
+    _reject_unknown(table, {"bridge"}, "deploy")
+    return DeploySettings(
+        bridge=_parse_bridge_deploy(_table(table.get("bridge", {}), "deploy.bridge"))
+    )
+
+
+def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
+    _reject_unknown(
+        table,
+        {
+            "default_method",
+            "usb_port_template",
+            "ota_command_template",
+            "ota",
+            "devices",
+        },
+        "deploy.bridge",
+    )
+    raw_devices = _table(table.get("devices", {}), "deploy.bridge.devices")
+    devices: list[BridgeDeployTarget] = []
+    for device, raw_target in raw_devices.items():
+        target = _table(raw_target, f"deploy.bridge.devices.{device}")
+        _reject_unknown(
+            target,
+            {"usb_port", "ota_command"},
+            f"deploy.bridge.devices.{device}",
+        )
+        devices.append(
+            BridgeDeployTarget(
+                device=_required_string(device, f"deploy.bridge.devices.{device}"),
+                usb_port=(
+                    _required_string(target["usb_port"], f"deploy.bridge.devices.{device}.usb_port")
+                    if "usb_port" in target
+                    else None
+                ),
+                ota_command=(
+                    _required_string(
+                        target["ota_command"],
+                        f"deploy.bridge.devices.{device}.ota_command",
+                    )
+                    if "ota_command" in target
+                    else None
+                ),
+            )
+        )
+    return BridgeDeploySettings(
+        default_method=cast(
+            "UploadMethod",
+            _choice(
+                table.get("default_method", "usb"),
+                _UPLOAD_METHODS,
+                "deploy.bridge.default_method",
+            ),
+        ),
+        usb_port_template=(
+            _required_string(table["usb_port_template"], "deploy.bridge.usb_port_template")
+            if "usb_port_template" in table and table["usb_port_template"] is not None
+            else None
+        ),
+        ota_command_template=(
+            _required_string(table["ota_command_template"], "deploy.bridge.ota_command_template")
+            if "ota_command_template" in table and table["ota_command_template"] is not None
+            else None
+        ),
+        ota=(
+            _parse_bridge_ota(_table(table["ota"], "deploy.bridge.ota"))
+            if "ota" in table and table["ota"] is not None
+            else None
+        ),
+        devices=tuple(devices),
+    )
+
+
+def _parse_bridge_ota(table: TomlTable) -> BridgeOtaSettings:
+    _reject_unknown(
+        table,
+        {
+            "script",
+            "python",
+            "broker_host",
+            "broker_port",
+            "broker_username",
+            "broker_username_env",
+            "broker_password",
+            "broker_password_env",
+            "base_topic",
+            "homie_version",
+            "timeout",
+            "broker_tls_cacert",
+            "broker_tls_certfile",
+            "broker_tls_keyfile",
+            "broker_tls_insecure",
+            "extra_args",
+        },
+        "deploy.bridge.ota",
+    )
+    broker_username = _optional_string(table, "broker_username", "deploy.bridge.ota")
+    broker_username_env = _optional_env_var(table, "broker_username_env", "deploy.bridge.ota")
+    broker_password = _optional_string(table, "broker_password", "deploy.bridge.ota")
+    broker_password_env = _optional_env_var(table, "broker_password_env", "deploy.bridge.ota")
+    broker_tls_certfile = _optional_string(table, "broker_tls_certfile", "deploy.bridge.ota")
+    broker_tls_keyfile = _optional_string(table, "broker_tls_keyfile", "deploy.bridge.ota")
+    if broker_username is not None and broker_username_env is not None:
+        _fail("deploy.bridge.ota cannot set both broker_username and broker_username_env.")
+    if broker_password is not None and broker_password_env is not None:
+        _fail("deploy.bridge.ota cannot set both broker_password and broker_password_env.")
+    if (broker_password is not None or broker_password_env is not None) and (
+        broker_username is None and broker_username_env is None
+    ):
+        _fail("deploy.bridge.ota broker_password requires broker_username or broker_username_env.")
+    if broker_tls_keyfile is not None and broker_tls_certfile is None:
+        _fail("deploy.bridge.ota broker_tls_keyfile requires broker_tls_certfile.")
+    return BridgeOtaSettings(
+        script=_optional_string(table, "script", "deploy.bridge.ota"),
+        python=_optional_string(table, "python", "deploy.bridge.ota") or "python",
+        broker_host=_optional_string(table, "broker_host", "deploy.bridge.ota"),
+        broker_port=(
+            _int(table["broker_port"], "deploy.bridge.ota.broker_port", minimum=1)
+            if "broker_port" in table
+            else None
+        ),
+        broker_username=broker_username,
+        broker_username_env=broker_username_env,
+        broker_password=broker_password,
+        broker_password_env=broker_password_env,
+        base_topic=(
+            _topic_base(table["base_topic"], "deploy.bridge.ota.base_topic")
+            if "base_topic" in table
+            else None
+        ),
+        homie_version=cast(
+            "HomieVersion",
+            _choice(
+                table.get("homie_version", "5"), _HOMIE_VERSIONS, "deploy.bridge.ota.homie_version"
+            ),
+        ),
+        timeout=(
+            _int(table["timeout"], "deploy.bridge.ota.timeout", minimum=1)
+            if "timeout" in table
+            else None
+        ),
+        broker_tls_cacert=_optional_string(table, "broker_tls_cacert", "deploy.bridge.ota"),
+        broker_tls_certfile=broker_tls_certfile,
+        broker_tls_keyfile=broker_tls_keyfile,
+        broker_tls_insecure=_bool(
+            table.get("broker_tls_insecure", False), "deploy.bridge.ota.broker_tls_insecure"
+        ),
+        extra_args=tuple(
+            _required_string(item, "deploy.bridge.ota.extra_args[]")
+            for item in _array(table.get("extra_args", []), "deploy.bridge.ota.extra_args")
+        ),
+    )
+
+
+def _parse_bridge(table: TomlTable) -> BridgeSettings:
+    _reject_unknown(table, {"defaults"}, "bridge")
+    return BridgeSettings(
+        defaults=_parse_bridge_environment_overrides(
+            _table(table.get("defaults", {}), "bridge.defaults"),
+            "bridge.defaults",
+        ),
+    )
+
+
+def _parse_bridge_environment_overrides(
+    table: TomlTable,
+    path: str,
+) -> BridgeEnvironmentOverrides:
+    _reject_unknown(table, {"defines", "build_flags"}, path)
+    return BridgeEnvironmentOverrides(
+        defines=_parse_defines(_table(table.get("defines", {}), f"{path}.defines"), path),
+        build_flags=_parse_bridge_build_flags(
+            _table(table.get("build_flags", {}), f"{path}.build_flags"),
+            f"{path}.build_flags",
+        ),
+    )
+
+
+def _parse_defines(table: TomlTable, owner_path: str) -> tuple[DefineOverride, ...]:
+    defines: list[DefineOverride] = []
+    for name, raw_value in table.items():
+        path = f"{owner_path}.defines.{name}"
+        if _DEFINE_NAME_RE.fullmatch(name) is None:
+            _fail(f"{path} must be a valid C/C++ preprocessor define name.")
+        value = _define_value(raw_value, path)
+        if name == "CONFIG_HOMIE_FIRMWARE_VERSION":
+            _fail(f"{path} must not be set in lsh_stack.toml; it follows the bridge firmware.")
+        if name == "HOMIE_CONVENTION_VERSION" and value not in {5, "5"}:
+            _fail(f"{path} must stay 5 for Homie v5 compatibility.")
+        defines.append(DefineOverride(name=name, value=value))
+    return tuple(defines)
+
+
+def _parse_bridge_build_flags(table: TomlTable, path: str) -> BridgeBuildFlagOverrides:
+    _reject_unknown(table, {"append"}, path)
+    return BridgeBuildFlagOverrides(
+        append=tuple(_string_list(table.get("append", []), f"{path}.append"))
+    )
+
+
+def _define_value(raw: object, path: str) -> DefineValue:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        value = raw.strip()
+        if not value:
+            _fail(f"{path} must not be empty.")
+        return value
+    return _fail(f"{path} must be a string, integer or boolean.")
 
 
 def _parse_external_actors(table: TomlTable) -> tuple[ExternalActor, ...]:
@@ -386,12 +700,31 @@ def _int(raw: object, path: str, *, minimum: int) -> int:
     return raw
 
 
+def _bool(raw: object, path: str) -> bool:
+    if not isinstance(raw, bool):
+        _fail(f"{path} must be a boolean.")
+    return raw
+
+
 def _required_string(raw: object, path: str) -> str:
     if not isinstance(raw, str):
         _fail(f"{path} must be a string.")
     value = raw.strip()
     if not value:
         _fail(f"{path} must not be empty.")
+    return value
+
+
+def _optional_string(table: TomlTable, key: str, path: str) -> str | None:
+    return _required_string(table[key], f"{path}.{key}") if key in table else None
+
+
+def _optional_env_var(table: TomlTable, key: str, path: str) -> str | None:
+    value = _optional_string(table, key, path)
+    if value is None:
+        return None
+    if _ENV_VAR_RE.fullmatch(value) is None:
+        _fail(f"{path}.{key} must be a valid environment variable name.")
     return value
 
 

@@ -25,13 +25,48 @@ other_devices_prefix = "other_devices"
 # other_actors_topic = "home/lsh/other-actors"
 
 [node_red]
-expose_state_context = "none"
+expose_state_context = "global"
 expose_state_key = "lsh_state"
 export_topics = "flow"
 export_topics_key = "lsh_topics"
-expose_config_context = "none"
+expose_config_context = "global"
 expose_config_key = "lsh_config"
 other_actors_context = "global"
+
+[platformio]
+# Optional project paths make generated deploy-plan.json commands directly runnable.
+# core_project = "../core"
+# bridge_project = "../bridge"
+# core_base_env = "env:release"
+# bridge_base_env = "env:release"
+
+# A generated bridge firmware profile is one wide binary for every bridge device.
+# Device names are upload targets, not firmware variants.
+# [[platformio.bridge_profiles]]
+# name = "littlefs"
+# extends = "lsh_bridge_littlefs"
+# default = true
+
+[deploy.bridge]
+# Keep USB for the first flash. Switch to "ota" after Wi-Fi/Homie setup works.
+default_method = "usb"
+
+# [deploy.bridge.ota]
+# broker_host = "mqtt.local"
+# broker_port = 1883
+# broker_username = "homie"
+# broker_password_env = "LSH_OTA_PASSWORD"
+# homie_version = "5"
+# timeout = 300
+
+[bridge.defaults.defines]
+# Typed defines replace generated -D flags with the same name.
+# CONFIG_ARDCOM_SERIAL_RX_PIN = "16U"
+# CONFIG_ARDCOM_SERIAL_TX_PIN = "17U"
+# LSH_DEBUG = true
+
+[bridge.defaults.build_flags]
+# append = ["-Wall"]
 
 [external_actors.zigbee_table_lamp]
 state_key = "other_devices.zigbee_table_lamp.state"
