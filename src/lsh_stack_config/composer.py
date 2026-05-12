@@ -108,11 +108,8 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
         "bridge": {
             "defaultMethod": config.deploy.bridge.default_method,
             "usbPortTemplate": config.deploy.bridge.usb_port_template,
-            "otaCommandTemplate": config.deploy.bridge.ota_command_template,
             "ota": (
                 {
-                    "script": config.deploy.bridge.ota.script,
-                    "python": config.deploy.bridge.ota.python,
                     "brokerHost": config.deploy.bridge.ota.broker_host,
                     "brokerPort": config.deploy.bridge.ota.broker_port,
                     "brokerUsername": config.deploy.bridge.ota.broker_username,
@@ -126,7 +123,6 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
                     "brokerTlsCertfile": config.deploy.bridge.ota.broker_tls_certfile,
                     "brokerTlsKeyfile": config.deploy.bridge.ota.broker_tls_keyfile,
                     "brokerTlsInsecure": config.deploy.bridge.ota.broker_tls_insecure,
-                    "extraArgs": list(config.deploy.bridge.ota.extra_args),
                 }
                 if config.deploy.bridge.ota is not None
                 else None
@@ -135,7 +131,6 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
                 {
                     "device": target.device,
                     "usbPort": target.usb_port,
-                    "otaCommand": target.ota_command,
                 }
                 for target in config.deploy.bridge.devices
             ],
@@ -483,8 +478,11 @@ def _actor_target(
     resolved_ids: list[int] = []
     for ref in target.actuators:
         actuator_id = _resolve_actuator_ref(ref, target.device, device_actuators)
-        if actuator_id not in resolved_ids:
-            resolved_ids.append(actuator_id)
+        if actuator_id in resolved_ids:
+            raise StackConfigError(
+                f"duplicate actuator target {actuator_id} on device {target.device}."
+            )
+        resolved_ids.append(actuator_id)
     return {"name": target.device, "allActuators": False, "actuators": resolved_ids}
 
 

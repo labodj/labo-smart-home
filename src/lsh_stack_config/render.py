@@ -6,19 +6,19 @@ import json
 import re
 from pathlib import Path
 
+from .bridge_ota_script import render_bridge_ota_script
 from .deploy import (
     BridgeOtaArtifacts,
     bridge_ota_command,
     bridge_ota_template,
     bridge_usb_port,
-    has_bridge_device_ota_command,
     pio_command,
     render_bridge_ota_config,
     render_deploy_plan,
     uses_generated_bridge_ota_script,
 )
-from .generated_scripts import render_bridge_ota_script, render_platformio_bridge_batch_script
 from .models import BridgeProfileSettings, JsonObject, StackConfig
+from .platformio_batch_script import render_platformio_bridge_batch_script
 from .platformio_utils import (
     inherited_option_values,
     path_for_platformio,
@@ -37,7 +37,6 @@ from .render_common import (
     json_list,
     json_object,
     profile_key,
-    slug,
 )
 from .render_common import (
     env_name as stack_env_name,
@@ -339,11 +338,11 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
     default_ota_command = bridge_ota_command(
         config,
         sample_ota_device,
-        default_profile,
         f".pio/build/{bridge_build_env(config, default_profile)}/firmware.bin",
         bridge_ota,
     )
     ota_targets_available = default_ota_command is not None
+    stack_cli_ota_available = uses_generated_bridge_ota_script(config)
 
     lines = [
         "# Generated LSH Stack Files",
@@ -420,6 +419,23 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         ]
     )
     if default_ota_command is not None:
+        if stack_cli_ota_available:
+            lines.extend(
+                [
+                    "Build and OTA-upload bridge firmware from the stack CLI:",
+                    "",
+                    "```bash",
+                    _stack_ota_cli_command(config, sample_ota_device),
+                    _stack_ota_cli_command(config),
+                    "```",
+                    "",
+                    "With no device argument, `lsh-stack ota` targets every configured bridge. "
+                    "Pass multiple device ids for a subset.",
+                    "If a prerequisite is missing, the command exits with the install "
+                    "command to run.",
+                    "",
+                ]
+            )
         lines.extend(
             [
                 "OTA a device subset with the default profile firmware:",
@@ -481,8 +497,7 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
             [
                 "",
                 "OTA custom targets are not generated until "
-                "`[deploy.bridge.ota]` or `[deploy.bridge].ota_command_template` is set in "
-                "`lsh_stack.toml`.",
+                "`[deploy.bridge.ota]` is set in `lsh_stack.toml`.",
                 "",
             ]
         )
@@ -566,16 +581,6 @@ def _render_bridge_profile_env(  # noqa: PLR0913
                     *[f"    {device}" for device in devices],
                 ]
             )
-            for device in devices:
-                if has_bridge_device_ota_command(config, device):
-                    ota_command = bridge_ota_command(
-                        config,
-                        device,
-                        profile,
-                        "{firmware}",
-                        bridge_ota,
-                    )
-                    lines.append(f"custom_lsh_stack_ota_command_{slug(device)} = {ota_command}")
 
     lines.append("")
     return lines
@@ -691,6 +696,15 @@ def _markdown_inline_code(value: object) -> str:
 
 def _markdown_table_cell(value: str) -> str:
     return value.replace("|", r"\|").replace("`", r"\`").replace("\n", "<br>")
+
+
+def _stack_ota_cli_command(config: StackConfig, device: str | None = None) -> str:
+    parts = ["lsh-stack", "ota"]
+    if config.path.name != "lsh_stack.toml":
+        parts.extend(["--config", config.path.name])
+    if device is not None:
+        parts.append(device)
+    return " ".join(parts)
 
 
 def _core_extra_script_path(config: StackConfig, env_name: str) -> str:

@@ -183,6 +183,7 @@ The bridge can emit diagnostics on `LSH/<device>/bridge`, including:
 
 - `mqtt_queue_overflow`
 - `mqtt_command_rejected`
+- `homie_command_rejected`
 - `actuator_command_storm_dropped`
 
 If those appear, the bridge is telling you the command path is the problem, not the UI

@@ -96,19 +96,16 @@ class PlatformioSettings:
 
 @dataclass(frozen=True)
 class BridgeDeployTarget:
-    """Optional per-bridge upload endpoints for USB and OTA workflows."""
+    """Optional per-bridge USB upload endpoint."""
 
     device: str
     usb_port: str | None = None
-    ota_command: str | None = None
 
 
 @dataclass(frozen=True)
 class BridgeOtaSettings:
     """Arguments for the standard Homie/MQTT OTA helper."""
 
-    script: str | None = None
-    python: str = "python"
     broker_host: str | None = None
     broker_port: int | None = None
     broker_username: str | None = None
@@ -122,7 +119,6 @@ class BridgeOtaSettings:
     broker_tls_certfile: str | None = None
     broker_tls_keyfile: str | None = None
     broker_tls_insecure: bool = False
-    extra_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -131,7 +127,6 @@ class BridgeDeploySettings:
 
     default_method: UploadMethod = "usb"
     usb_port_template: str | None = None
-    ota_command_template: str | None = None
     ota: BridgeOtaSettings | None = None
     devices: tuple[BridgeDeployTarget, ...] = ()
 

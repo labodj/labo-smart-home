@@ -192,8 +192,16 @@ If `lsh-stack` is already installed:
 ```bash
 lsh-stack new my-lsh-installation
 cd my-lsh-installation
-platformio run -d core -e core_panel  # optional CLI path when PlatformIO is in PATH
-lsh-stack generate lsh_stack.toml --output-dir generated
+lsh-stack setup
+```
+
+From a GitHub Release, you can use the single-file launcher without checking out this
+repository:
+
+```bash
+python /path/to/lsh-stack.pyz new my-lsh-installation
+cd my-lsh-installation
+python /path/to/lsh-stack.pyz setup
 ```
 
 From a checkout of this repository, use the standard Python launcher script. On Windows,
@@ -202,15 +210,26 @@ use `py` instead of `python` if that is how Python is installed:
 ```bash
 python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation
 cd my-lsh-installation
-platformio run -d core -e core_panel  # optional CLI path when PlatformIO is in PATH
-python /path/to/labo-smart-home/lsh-stack.py generate lsh_stack.toml --output-dir generated
+python /path/to/labo-smart-home/lsh-stack.py setup
+```
+
+If you only want to evaluate or build `lsh-core` firmware first, create a standalone
+controller project instead of the whole stack:
+
+```bash
+lsh-stack new-core my-lsh-core
+cd my-lsh-core
+platformio run -e core_panel
 ```
 
 `new` writes `core/platformio.ini` and `bridge/platformio.ini` once, then leaves those
-manual files alone. They include disposable fragments from `generated/`, so PlatformIO
-can see the first environments before the first full generation. Use either VSCode with
-the PlatformIO extension or the `platformio` CLI if it is available. The `generate`
-command replaces only the files in `generated/`.
+manual files alone. If you already have only `lsh_stack.toml` and `lsh_devices.toml`,
+`setup` creates the missing core/bridge PlatformIO shells beside them without
+overwriting existing project files. Use either VSCode with the PlatformIO extension or
+the `platformio` CLI if it is available. The `setup` command runs the normal first-use
+sequence: it installs/builds the starter core once when the PlatformIO CLI is available,
+regenerates `generated/`, checks the stack and prints the next build targets. The
+lower-level `generate` command still replaces only the files in `generated/`.
 
 For local or symlinked controller checkouts, set `[core].tool`; generated controller
 environments then use the matching local `platformio_lsh_static_config.py` instead of a
@@ -227,7 +246,17 @@ For Node-RED, install `node-red-contrib-lsh-logic`, add the node to a flow and f
 For bridge builds and uploads, use the generated PlatformIO environments from the IDE or
 CLI. Profile tasks such as `bridge_littlefs` build one wide firmware shared by every
 bridge device. The same profile exposes `LSH OTA j1`, `LSH OTA j2` and `LSH OTA All`
-custom targets for Homie/MQTT OTA in the PlatformIO IDE.
+custom targets for Homie/MQTT OTA in the PlatformIO IDE. For CLI use, the stack command
+can build the default bridge profile and OTA-upload one device, a subset, or every
+bridge:
+
+```bash
+lsh-stack ota j1
+lsh-stack ota j1 j2
+lsh-stack ota
+```
+
+If a prerequisite is missing, the command exits with the install command to run.
 
 ## Public History
 

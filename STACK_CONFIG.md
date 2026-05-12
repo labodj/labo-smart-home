@@ -16,7 +16,7 @@ Use the configurator path when you want one source of truth for the whole stack:
 
 1. edit `core/lsh_devices.toml` for the controller topology;
 2. edit `lsh_stack.toml` for MQTT, bridge deployment, coordinator and Node-RED choices;
-3. run `lsh-stack generate ... --output-dir generated`;
+3. run `lsh-stack generate`;
 4. include the generated PlatformIO fragments and copy the generated coordinator or
    Node-RED values.
 
@@ -44,7 +44,9 @@ cd my-lsh-installation
 ```
 
 The starter project has two normal PlatformIO projects, disposable generated files in
-`generated/` and persistent local notes or manual extensions in `overrides/`.
+`generated/` and persistent local notes or manual extensions in `overrides/`. When you
+already have an existing `lsh_stack.toml` plus `lsh_devices.toml`, `lsh-stack setup` can
+create the missing core/bridge PlatformIO shells from those paths.
 
 ```text
 my-lsh-installation/
@@ -83,7 +85,7 @@ pre-build hook can generate `core/include/lsh_user_config.hpp`:
 Generate all stack artifacts:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py generate lsh_stack.toml --output-dir generated
+python /path/to/labo-smart-home/lsh-stack.py generate
 ```
 
 If `generate` cannot find the `lsh-core` generator yet, build `core_panel` once from the
@@ -108,15 +110,15 @@ The output directory contains:
 - `deploy-plan.json`: exact PlatformIO commands for tools and scripts;
 - `README.generated.md`: short generated guide for the current stack.
 
-Use `python /path/to/labo-smart-home/lsh-stack.py check lsh_stack.toml` in CI or before
-a firmware build. It validates the TOML, asks `lsh-core` for the controller contract,
-verifies names and prints a compact bring-up report.
+Use `python /path/to/labo-smart-home/lsh-stack.py check` in CI or before a firmware
+build. It validates the TOML, asks `lsh-core` for the controller contract, verifies
+names and prints a compact bring-up report.
 
-Use `python /path/to/labo-smart-home/lsh-stack.py doctor lsh_stack.toml` when something
-fails and you want the likely fix in plain language. Use
-`python /path/to/labo-smart-home/lsh-stack.py explain lsh_stack.toml <device>` to
-inspect the controller environment, bridge environments, MQTT topics, build flags and
-coordinator entry for one controller.
+Use `python /path/to/labo-smart-home/lsh-stack.py doctor` when something fails and you
+want the likely fix in plain language. Use
+`python /path/to/labo-smart-home/lsh-stack.py explain <device>` to inspect the
+controller environment, bridge environments, MQTT topics, build flags and coordinator
+entry for one controller.
 
 ## File Shape
 
@@ -159,9 +161,6 @@ Use the smallest file that matches where you are in the bring-up:
 - [`examples/lsh_stack.complete.toml`](./examples/lsh_stack.complete.toml) shows the
   full shape: selected devices, MQTT paths, coordinator timing, Node-RED context
   exports, an external actor topic and multiple network-click mappings.
-
-The older [`examples/lsh_stack.toml`](./examples/lsh_stack.toml) stays as a guided
-template with the common fields and commented network-click block.
 
 ## Network Clicks
 
@@ -371,19 +370,6 @@ otherwise from `[mqtt].homie_base_path`. Use `broker_password_env` or
 `broker_username_env` when secrets should stay outside `lsh_stack.toml`; the Homie OTA
 helper reads the environment variable at execution time, so secrets do not appear in
 generated PlatformIO commands.
-
-Use `[deploy.bridge.ota].script` or `ota_command_template` only as an escape hatch for a
-custom wrapper. `{firmware}` is replaced with PlatformIO's built firmware path.
-`{device}` is the single target device for one-device OTA targets, while `{devices}` is
-a space-separated list for batch OTA.
-
-```toml
-[deploy.bridge]
-ota_command_template = "./scripts/ota_batch_updater.py -f {firmware} {devices}"
-
-[deploy.bridge.devices.j1]
-ota_command = "./scripts/ota_batch_updater.py -f {firmware} j1"
-```
 
 Build-all and OTA-all are generated as PlatformIO custom targets so they are available
 in the IDE:

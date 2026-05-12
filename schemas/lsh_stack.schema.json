@@ -79,7 +79,19 @@
         "bridge_profiles": {
           "type": "array",
           "items": { "$ref": "#/$defs/bridgeProfile" },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "allOf": [
+            {
+              "not": {
+                "contains": {
+                  "type": "object",
+                  "required": ["default"],
+                  "properties": { "default": { "const": true } }
+                },
+                "minContains": 2
+              }
+            }
+          ]
         }
       }
     },
@@ -93,13 +105,10 @@
           "properties": {
             "default_method": { "enum": ["usb", "ota"] },
             "usb_port_template": { "type": "string", "minLength": 1 },
-            "ota_command_template": { "type": "string", "minLength": 1 },
             "ota": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "script": { "type": "string", "minLength": 1 },
-                "python": { "type": "string", "minLength": 1 },
                 "broker_host": { "type": "string", "minLength": 1 },
                 "broker_port": { "type": "integer", "minimum": 1 },
                 "broker_username": { "type": "string", "minLength": 1 },
@@ -118,11 +127,28 @@
                 "broker_tls_cacert": { "type": "string", "minLength": 1 },
                 "broker_tls_certfile": { "type": "string", "minLength": 1 },
                 "broker_tls_keyfile": { "type": "string", "minLength": 1 },
-                "broker_tls_insecure": { "type": "boolean" },
-                "extra_args": {
-                  "type": "array",
-                  "items": { "type": "string", "minLength": 1 }
+                "broker_tls_insecure": { "type": "boolean" }
+              },
+              "allOf": [
+                { "not": { "required": ["broker_username", "broker_username_env"] } },
+                { "not": { "required": ["broker_password", "broker_password_env"] } },
+                {
+                  "if": {
+                    "anyOf": [
+                      { "required": ["broker_password"] },
+                      { "required": ["broker_password_env"] }
+                    ]
+                  },
+                  "then": {
+                    "anyOf": [
+                      { "required": ["broker_username"] },
+                      { "required": ["broker_username_env"] }
+                    ]
+                  }
                 }
+              ],
+              "dependentRequired": {
+                "broker_tls_keyfile": ["broker_tls_certfile"]
               }
             },
             "devices": {
@@ -131,8 +157,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "usb_port": { "type": "string", "minLength": 1 },
-                  "ota_command": { "type": "string", "minLength": 1 }
+                  "usb_port": { "type": "string", "minLength": 1 }
                 }
               }
             }
@@ -182,7 +207,17 @@
     "defines": {
       "type": "object",
       "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "$ref": "#/$defs/defineValue" }
+      "additionalProperties": { "$ref": "#/$defs/defineValue" },
+      "allOf": [
+        { "not": { "required": ["CONFIG_HOMIE_FIRMWARE_VERSION"] } },
+        {
+          "properties": {
+            "HOMIE_CONVENTION_VERSION": {
+              "oneOf": [{ "const": 5 }, { "const": "5" }]
+            }
+          }
+        }
+      ]
     },
     "bridgeBuildFlags": {
       "type": "object",
@@ -207,7 +242,11 @@
       "additionalProperties": false,
       "required": ["name", "extends"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "enum": ["usb", "ota", "batch", "all"] }
+        },
         "extends": { "type": "string", "minLength": 1 },
         "default": { "type": "boolean" },
         "ota": { "type": "boolean" }

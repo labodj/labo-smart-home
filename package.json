@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "format": "prettier --write README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md schemas/lsh_stack.schema.json .github/workflows/ci.yml .markdownlint-cli2.yaml .prettierrc.json package.json && uv run ruff format lsh-stack.py src tests",
-    "format:check": "prettier --check README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md schemas/lsh_stack.schema.json .github/workflows/ci.yml .markdownlint-cli2.yaml .prettierrc.json package.json",
+    "format": "prettier --write README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md schemas/lsh_stack.schema.json .github/workflows/ci.yml .github/workflows/release-pyz.yml .markdownlint-cli2.yaml .prettierrc.json package.json && uv run ruff format lsh-stack.py src tests",
+    "format:check": "prettier --check README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md schemas/lsh_stack.schema.json .github/workflows/ci.yml .github/workflows/release-pyz.yml .markdownlint-cli2.yaml .prettierrc.json package.json",
     "lint:md": "markdownlint-cli2 README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md",
     "lint:md:fix": "markdownlint-cli2 --fix README.md DOCS.md FAQ.md GENERATOR_ARCHITECTURE.md GETTING_STARTED.md GLOSSARY.md HARDWARE_OVERVIEW.md QUALITY_GATE.md REFERENCE_STACK.md STACK_CONFIG.md TROUBLESHOOTING.md",
     "format:py:check": "uv run ruff format --check lsh-stack.py src tests",

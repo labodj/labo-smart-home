@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, NoReturn, cast
 
@@ -114,9 +115,9 @@ def _parse_core(table: TomlTable, base_dir: Path) -> CoreSettings:
         if "tool" in table and table["tool"] is not None
         else None
     )
-    selected_devices = tuple(
-        _string_list(table.get("selected_devices", []), "core.selected_devices")
-    )
+    selected_devices_list = _string_list(table.get("selected_devices", []), "core.selected_devices")
+    _reject_duplicates(selected_devices_list, "core.selected_devices")
+    selected_devices = tuple(selected_devices_list)
     return CoreSettings(devices=devices, tool=tool, selected_devices=selected_devices)
 
 
@@ -258,6 +259,10 @@ def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
         )
     )
     default_profiles = [profile.name for profile in bridge_profiles if profile.default]
+    _reject_duplicates(
+        [profile.name for profile in bridge_profiles],
+        "platformio.bridge_profiles.name",
+    )
     if len(default_profiles) > 1:
         defaults = ", ".join(default_profiles)
         _fail(f"only one platformio.bridge_profiles entry can set default = true: {defaults}.")
@@ -323,7 +328,6 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
         {
             "default_method",
             "usb_port_template",
-            "ota_command_template",
             "ota",
             "devices",
         },
@@ -335,7 +339,7 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
         target = _table(raw_target, f"deploy.bridge.devices.{device}")
         _reject_unknown(
             target,
-            {"usb_port", "ota_command"},
+            {"usb_port"},
             f"deploy.bridge.devices.{device}",
         )
         devices.append(
@@ -344,14 +348,6 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
                 usb_port=(
                     _required_string(target["usb_port"], f"deploy.bridge.devices.{device}.usb_port")
                     if "usb_port" in target
-                    else None
-                ),
-                ota_command=(
-                    _required_string(
-                        target["ota_command"],
-                        f"deploy.bridge.devices.{device}.ota_command",
-                    )
-                    if "ota_command" in target
                     else None
                 ),
             )
@@ -370,11 +366,6 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
             if "usb_port_template" in table and table["usb_port_template"] is not None
             else None
         ),
-        ota_command_template=(
-            _required_string(table["ota_command_template"], "deploy.bridge.ota_command_template")
-            if "ota_command_template" in table and table["ota_command_template"] is not None
-            else None
-        ),
         ota=(
             _parse_bridge_ota(_table(table["ota"], "deploy.bridge.ota"))
             if "ota" in table and table["ota"] is not None
@@ -388,8 +379,6 @@ def _parse_bridge_ota(table: TomlTable) -> BridgeOtaSettings:
     _reject_unknown(
         table,
         {
-            "script",
-            "python",
             "broker_host",
             "broker_port",
             "broker_username",
@@ -403,7 +392,6 @@ def _parse_bridge_ota(table: TomlTable) -> BridgeOtaSettings:
             "broker_tls_certfile",
             "broker_tls_keyfile",
             "broker_tls_insecure",
-            "extra_args",
         },
         "deploy.bridge.ota",
     )
@@ -424,8 +412,6 @@ def _parse_bridge_ota(table: TomlTable) -> BridgeOtaSettings:
     if broker_tls_keyfile is not None and broker_tls_certfile is None:
         _fail("deploy.bridge.ota broker_tls_keyfile requires broker_tls_certfile.")
     return BridgeOtaSettings(
-        script=_optional_string(table, "script", "deploy.bridge.ota"),
-        python=_optional_string(table, "python", "deploy.bridge.ota") or "python",
         broker_host=_optional_string(table, "broker_host", "deploy.bridge.ota"),
         broker_port=(
             _int(table["broker_port"], "deploy.bridge.ota.broker_port", minimum=1)
@@ -457,10 +443,6 @@ def _parse_bridge_ota(table: TomlTable) -> BridgeOtaSettings:
         broker_tls_keyfile=broker_tls_keyfile,
         broker_tls_insecure=_bool(
             table.get("broker_tls_insecure", False), "deploy.bridge.ota.broker_tls_insecure"
-        ),
-        extra_args=tuple(
-            _required_string(item, "deploy.bridge.ota.extra_args[]")
-            for item in _array(table.get("extra_args", []), "deploy.bridge.ota.extra_args")
         ),
     )
 
@@ -547,6 +529,7 @@ def _parse_network_clicks(raw: object) -> tuple[NetworkClick, ...]:
         _fail("network_clicks must be an array of tables.")
 
     clicks: list[NetworkClick] = []
+    seen_clicks: dict[tuple[str, str, str], int] = {}
     for index, item in enumerate(raw):
         path = f"network_clicks[{index}]"
         table = _table(item, path)
@@ -559,8 +542,18 @@ def _parse_network_clicks(raw: object) -> tuple[NetworkClick, ...]:
             for actor in _array(table.get("actors", []), f"{path}.actors")
         )
         other_actors = tuple(_string_list(table.get("other_actors", []), f"{path}.other_actors"))
+        _reject_duplicates([actor.device for actor in actors], f"{path}.actors.device")
+        _reject_duplicates(list(other_actors), f"{path}.other_actors")
         if not actors and not other_actors:
             _fail(f"{path} must define at least one target in actors or other_actors.")
+        click_key = (source_device, source_button, click_type)
+        previous_index = seen_clicks.get(click_key)
+        if previous_index is not None:
+            _fail(
+                f"{path} duplicates network_clicks[{previous_index}]: "
+                f"{source_device}.{source_button} {click_type}."
+            )
+        seen_clicks[click_key] = index
         clicks.append(
             NetworkClick(
                 source_device=source_device,
@@ -585,6 +578,7 @@ def _parse_actor(raw: object, path: str) -> ActorTarget:
             _actuator_ref(value, f"{path}.actuators")
             for value in _array(actuators_raw, f"{path}.actuators")
         )
+        _reject_duplicates(list(actuators), f"{path}.actuators")
         if not actuators:
             _fail(f"{path}.actuators must not be empty.")
     return ActorTarget(device=device, actuators=actuators)
@@ -678,6 +672,15 @@ def _actuator_ref(raw: object, path: str) -> ActuatorRef:
 
 def _string_list(raw: object, path: str) -> list[str]:
     return [_required_string(item, path) for item in _array(raw, path)]
+
+
+def _reject_duplicates(values: Sequence[object], path: str) -> None:
+    seen: dict[object, int] = {}
+    for index, value in enumerate(values):
+        previous_index = seen.get(value)
+        if previous_index is not None:
+            _fail(f"{path}[{index}] duplicates {path}[{previous_index}]: {value!r}.")
+        seen[value] = index
 
 
 def _array(raw: object, path: str) -> list[object]:

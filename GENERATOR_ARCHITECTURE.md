@@ -23,20 +23,21 @@ computed.
 
 ## Module Ownership
 
-| Module                 | Owns                                                        |
-| ---------------------- | ----------------------------------------------------------- |
-| `cli.py`               | command dispatch and user-visible command output            |
-| `models.py`            | typed configuration shape                                   |
-| `parser.py`            | TOML validation and friendly errors                         |
-| `core_export.py`       | the boundary with `lsh-core`                                |
-| `composer.py`          | stack JSON semantics and cross-component values             |
-| `render.py`            | generated files and generated guides                        |
-| `deploy.py`            | PlatformIO, USB and MQTT OTA command strings                |
-| `render_common.py`     | tiny shared helpers used by CLI/render/deploy               |
-| `generated_scripts.py` | source text for generated helper scripts                    |
-| `platformio_utils.py`  | PlatformIO ini parsing and path formatting                  |
-| `doctor.py`            | plain-language diagnostics                                  |
-| `scaffold.py`          | starter project file writing                                |
+| Module                       | Owns                                                        |
+| ---------------------------- | ----------------------------------------------------------- |
+| `cli.py`                     | command dispatch and user-visible command output            |
+| `models.py`                  | typed configuration shape                                   |
+| `parser.py`                  | TOML validation and friendly errors                         |
+| `core_export.py`             | the boundary with `lsh-core`                                |
+| `composer.py`                | stack JSON semantics and cross-component values             |
+| `render.py`                  | generated files and generated guides                        |
+| `deploy.py`                  | PlatformIO, USB and MQTT OTA command strings                |
+| `render_common.py`           | tiny shared helpers used by CLI/render/deploy               |
+| `bridge_ota_script.py`       | source text for the generated bridge OTA wrapper            |
+| `platformio_batch_script.py` | source text for generated PlatformIO batch targets          |
+| `platformio_utils.py`        | PlatformIO ini parsing and path formatting                  |
+| `doctor.py`                  | plain-language diagnostics                                  |
+| `scaffold.py`                | starter project file writing                                |
 
 If a change needs logic from another module, prefer moving a small helper to
 `render_common.py` or `platformio_utils.py` over copy-pasting it.

@@ -401,7 +401,7 @@ build_flags =
 extends = env:bridge_littlefs
 """
 
-BOOTSTRAP_CORE_INI = """; Bootstrap file created by lsh-stack init/new.
+BOOTSTRAP_CORE_INI = """; Bootstrap file created by lsh-stack new.
 ; It exists so PlatformIO can install dependencies before the first full generate.
 ; Run the generate command shown in README.md to replace it.
 
@@ -447,7 +447,7 @@ else:
     )
 """
 
-BOOTSTRAP_BRIDGE_INI = """; Bootstrap file created by lsh-stack init/new.
+BOOTSTRAP_BRIDGE_INI = """; Bootstrap file created by lsh-stack new.
 ; It exists so PlatformIO can install dependencies before the first full generate.
 ; Run the generate command shown in README.md to replace it.
 
@@ -496,6 +496,17 @@ void loop()
 }
 """
 
+ETL_PROFILE_OVERRIDE_TEMPLATE = """#pragma once
+
+#ifndef ETL_VERBOSE_ERRORS
+#define ETL_VERBOSE_ERRORS
+#endif
+
+#ifndef ETL_NO_STL
+#define ETL_NO_STL
+#endif
+"""
+
 BRIDGE_MAIN_TEMPLATE = """#include <Arduino.h>
 #include <lsh_bridge.hpp>
 
@@ -535,20 +546,26 @@ PROJECT_README_TEMPLATE = """# LSH Installation
 
 Do not edit files under `generated/`; they are recreated from the TOML files.
 
-## First Build
+## First Setup
 
-Use PlatformIO either from VSCode/PlatformIO IDE or from the CLI when `platformio` is
-available. Build the starter controller once so PlatformIO installs `lsh-core`:
+Run the guided setup from this folder:
 
 ```bash
-platformio run -d core -e core_panel
+{lsh_stack_command} setup
 ```
 
-Then generate and check the stack files:
+It generates `generated/`, checks the stack, creates missing core/bridge project files,
+and, when the PlatformIO CLI is available, builds the starter core project once if
+`lsh-core` has not been installed yet.
+
+If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
+extension and run `core_panel` -> Build once, then run the same setup command again.
+
+When you intentionally want separated steps:
 
 ```bash
-{lsh_stack_command} generate lsh_stack.toml --output-dir generated
-{lsh_stack_command} check lsh_stack.toml
+{lsh_stack_command} generate
+{lsh_stack_command} check
 ```
 
 Build the default bridge firmware:
@@ -563,6 +580,31 @@ an overlay for richer fleet workflows.
 
 On Windows, use `py` instead of `python` in the commands above if that is how Python is
 installed.
+"""
+
+CORE_PROJECT_README_TEMPLATE = """# LSH Core Project
+
+## Files You Edit
+
+- `lsh_devices.toml`: controller topology, pins, local actions and core timing.
+- `platformio.ini`: local PlatformIO overrides.
+
+Do not edit files under `generated/`; they are bootstrap files and can be replaced by
+stack-generated files later.
+
+## First Build
+
+Run the default controller firmware build:
+
+```bash
+platformio run -e core_panel
+```
+
+If PlatformIO is only available inside VSCode, open this folder with the PlatformIO
+extension and run `core_panel` -> Build from Project Tasks.
+
+This project is standalone. If you later adopt the full stack, create a stack project
+with `lsh-stack new` and point `[core].devices` at this `lsh_devices.toml`.
 """
 
 OVERRIDES_README = """# Persistent Overrides

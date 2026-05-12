@@ -185,28 +185,71 @@ The starter project includes bootstrap `generated/platformio-core.ini` and
 `generated/platformio-bridge.ini` files. They exist so PlatformIO can see the first
 environments and install packages before the real generator has run.
 
-Build the starter controller once with either workflow:
-
-- VSCode: open `core/` with the PlatformIO extension and run `core_panel` -> Build.
-- CLI, when `platformio` is available: `platformio run -d core -e core_panel`.
-
-Generate the first output set:
+Run the guided setup first:
 
 ```bash
-lsh-stack generate lsh_stack.toml --output-dir generated
-lsh-stack check lsh_stack.toml
+lsh-stack setup
+```
+
+When using the single-file `lsh-stack.pyz` launcher from a GitHub Release, run the same
+command through Python:
+
+```bash
+python /path/to/lsh-stack.pyz setup
 ```
 
 When working from a checkout and `lsh-stack` is not installed, use:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py generate lsh_stack.toml --output-dir generated
-python /path/to/labo-smart-home/lsh-stack.py check lsh_stack.toml
+python /path/to/labo-smart-home/lsh-stack.py setup
+```
+
+If you only want a standalone `lsh-core` firmware project, start smaller:
+
+```bash
+lsh-stack new-core my-lsh-core
+cd my-lsh-core
+platformio run -e core_panel
+```
+
+`setup` generates the first output set, checks the stack, and, when the PlatformIO CLI
+is available, builds the starter controller once if that is needed to install
+`lsh-core`. If you are recreating an installation from existing TOML files, `setup` also
+creates missing core/bridge PlatformIO project shells without overwriting existing
+project files.
+
+If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
+extension and run `core_panel` -> Build once, then rerun `lsh-stack setup`.
+
+The expert commands remain available when you intentionally want each step separated:
+
+```bash
+lsh-stack generate
+lsh-stack check
+```
+
+From a checkout:
+
+```bash
+python /path/to/labo-smart-home/lsh-stack.py generate
+python /path/to/labo-smart-home/lsh-stack.py check
 ```
 
 After generation, continue from VSCode PlatformIO Project Tasks or from the PlatformIO
 CLI. Both paths use the same `core/` and `bridge/` projects and the same generated
 environments.
+
+When `[deploy.bridge.ota]` is configured, bridge OTA can also be driven directly from
+the stack CLI:
+
+```bash
+lsh-stack ota panel
+lsh-stack ota panel lights
+lsh-stack ota
+```
+
+The last command builds the default bridge profile and updates every configured bridge.
+If a prerequisite is missing, the command exits with the install command to run.
 
 The generated files give you bridge PlatformIO flags, controller and bridge
 environments, coordinator `systemConfig`, Node-RED `lsh-logic` settings and exact
@@ -215,13 +258,13 @@ build/upload commands derived from the same controller profile.
 If generation fails, run:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py doctor lsh_stack.toml
+python /path/to/labo-smart-home/lsh-stack.py doctor
 ```
 
 To inspect one controller before flashing it:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py explain lsh_stack.toml panel
+python /path/to/labo-smart-home/lsh-stack.py explain panel
 ```
 
 ### Step 3. Compare with the controller example

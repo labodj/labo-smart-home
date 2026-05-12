@@ -9,7 +9,6 @@ from pathlib import Path
 from .errors import StackConfigError
 from .models import (
     BridgeDeployTarget,
-    BridgeOtaSettings,
     BridgeProfileSettings,
     JsonObject,
     StackConfig,
@@ -81,7 +80,6 @@ def render_deploy_plan(
         ota_command = bridge_ota_command(
             config,
             device,
-            default_profile,
             "$SOURCE",
             bridge_ota,
         )
@@ -158,29 +156,14 @@ def bridge_usb_port(config: StackConfig, device: str) -> str | None:
 def bridge_ota_command(
     config: StackConfig,
     device: str,
-    profile: BridgeProfileSettings,
     firmware: str,
     bridge_ota: BridgeOtaArtifacts | None = None,
 ) -> str | None:
     """Return the shell command used to OTA-upload one bridge firmware."""
-    target = _bridge_deploy_target(config, device)
-    template = target.ota_command if target is not None and target.ota_command is not None else None
-    if template is None:
-        template = config.deploy.bridge.ota_command_template
-    if template is not None:
-        return _format_deploy_template(
-            template,
-            device=device,
-            devices=device,
-            profile=profile_key(profile),
-            env=bridge_build_env(config, profile),
-            firmware=firmware,
-        )
     if config.deploy.bridge.ota is None:
         return None
     return _bridge_mqtt_ota_command(
         config,
-        config.deploy.bridge.ota,
         device,
         firmware,
         bridge_ota,
@@ -192,51 +175,31 @@ def bridge_ota_template(
     bridge_ota: BridgeOtaArtifacts | None = None,
 ) -> str | None:
     """Return the PlatformIO OTA template command for generated custom targets."""
-    if config.deploy.bridge.ota_command_template is not None:
-        return config.deploy.bridge.ota_command_template
     if config.deploy.bridge.ota is None:
         return None
     return _bridge_mqtt_ota_command(
         config,
-        config.deploy.bridge.ota,
         "{device}",
         "{firmware}",
         bridge_ota,
+        python_command="{python}",
     )
 
 
 def bridge_ota_commands(
     config: StackConfig,
     devices: list[str],
-    profile: BridgeProfileSettings,
     firmware: str,
     bridge_ota: BridgeOtaArtifacts | None = None,
 ) -> list[str]:
     """Return the command list needed to OTA-upload a device set."""
     if not devices:
         return []
-    template = config.deploy.bridge.ota_command_template
-    has_specific_commands = any(
-        (target := _bridge_deploy_target(config, device)) is not None
-        and target.ota_command is not None
-        for device in devices
-    )
-    if template is not None and "{devices}" in template and not has_specific_commands:
-        command = _format_deploy_template(
-            template,
-            device=devices[0],
-            devices=" ".join(devices),
-            profile=profile_key(profile),
-            env=bridge_build_env(config, profile),
-            firmware=firmware,
-        )
-        return [command]
     commands: list[str] = []
     for device in devices:
         device_command = bridge_ota_command(
             config,
             device,
-            profile,
             firmware,
             bridge_ota,
         )
@@ -247,7 +210,7 @@ def bridge_ota_commands(
 
 def uses_generated_bridge_ota_script(config: StackConfig) -> bool:
     """Return whether generation should emit the Homie OTA wrapper script."""
-    return config.deploy.bridge.ota is not None and config.deploy.bridge.ota.script is None
+    return config.deploy.bridge.ota is not None
 
 
 def render_bridge_ota_config(config: StackConfig) -> JsonObject:
@@ -283,12 +246,6 @@ def render_bridge_ota_config(config: StackConfig) -> JsonObject:
     }
 
 
-def has_bridge_device_ota_command(config: StackConfig, device: str) -> bool:
-    """Return whether a bridge device overrides the stack OTA command."""
-    target = _bridge_deploy_target(config, device)
-    return target is not None and target.ota_command is not None
-
-
 def pio_command(project: str, envs: list[str], target: str | None) -> list[str]:
     """Return a PlatformIO CLI command as argv data."""
     command = ["platformio", "run", "-d", project]
@@ -318,7 +275,6 @@ def _bridge_profile_plan(
             command := bridge_ota_command(
                 config,
                 device,
-                profile,
                 "$SOURCE",
                 bridge_ota,
             )
@@ -328,7 +284,6 @@ def _bridge_profile_plan(
     ota_all_commands = bridge_ota_commands(
         config,
         devices,
-        profile,
         "$SOURCE",
         bridge_ota,
     )
@@ -353,64 +308,25 @@ def _bridge_profile_plan(
 
 def _bridge_mqtt_ota_command(
     config: StackConfig,
-    ota: BridgeOtaSettings,
     device: str,
     firmware: str,
     bridge_ota: BridgeOtaArtifacts | None,
+    *,
+    python_command: str | None = None,
 ) -> str:
     bridge_ota = bridge_ota or BridgeOtaArtifacts()
-    script = _bridge_ota_script_command_path(config, ota, bridge_ota.script)
-    args = [_quote_command_arg(ota.python), _quote_command_arg(script)]
-    if ota.script is None and bridge_ota.config is not None:
+    if bridge_ota.script is None:
+        raise StackConfigError("generated bridge OTA script path is required.")
+    script = path_for_platformio(bridge_ota.script, config.platformio.bridge_project)
+    args = [_quote_command_arg(python_command or "python"), _quote_command_arg(script)]
+    if bridge_ota.config is not None:
         # The generated wrapper is deliberately thin: the command itself names the
         # generated config file, so users can see exactly which broker/topic defaults
         # are used by PlatformIO and deploy-plan entries.
         _extend_option(args, "--config", _bridge_ota_config_command_path(config, bridge_ota.config))
-    else:
-        _append_inline_bridge_ota_options(args, config, ota)
-
-    args.extend(_quote_command_arg(arg) for arg in ota.extra_args)
     _extend_raw_option(args, "--device-id", device)
     args.append(firmware)
     return " ".join(args)
-
-
-def _append_inline_bridge_ota_options(
-    args: list[str],
-    config: StackConfig,
-    ota: BridgeOtaSettings,
-) -> None:
-    """Append broker options when no generated OTA config file is part of the command."""
-    _extend_option(args, "--broker-host", ota.broker_host)
-    if ota.broker_port is not None:
-        _extend_option(args, "--broker-port", str(ota.broker_port))
-    _extend_option(args, "--broker-username", ota.broker_username)
-    if ota.broker_username_env is not None:
-        _extend_raw_option(args, "--broker-username", _env_shell_ref(ota.broker_username_env))
-    _extend_option(args, "--broker-password", ota.broker_password)
-    if ota.broker_password_env is not None:
-        _extend_raw_option(args, "--broker-password", _env_shell_ref(ota.broker_password_env))
-    _extend_option(args, "--base-topic", ota.base_topic or config.mqtt.homie_base_path)
-    _extend_option(args, "--homie-version", ota.homie_version)
-    if ota.timeout is not None:
-        _extend_option(args, "--timeout", str(ota.timeout))
-    _extend_option(args, "--broker-tls-cacert", ota.broker_tls_cacert)
-    _extend_option(args, "--broker-tls-certfile", ota.broker_tls_certfile)
-    _extend_option(args, "--broker-tls-keyfile", ota.broker_tls_keyfile)
-    if ota.broker_tls_insecure:
-        args.append("--broker-tls-insecure")
-
-
-def _bridge_ota_script_command_path(
-    config: StackConfig,
-    ota: BridgeOtaSettings,
-    bridge_ota_script_path: Path | None,
-) -> str:
-    if ota.script is not None:
-        return ota.script
-    if bridge_ota_script_path is None:
-        raise StackConfigError("generated bridge OTA script path is required.")
-    return path_for_platformio(bridge_ota_script_path, config.platformio.bridge_project)
 
 
 def _bridge_ota_config_command_path(config: StackConfig, bridge_ota_config_path: Path) -> str:
@@ -428,13 +344,9 @@ def _extend_raw_option(args: list[str], option: str, value: str) -> None:
 
 
 def _quote_command_arg(value: str) -> str:
-    if value in {"{device}", "{devices}", "{firmware}", "$SOURCE"}:
+    if value in {"{device}", "{firmware}", "{python}", "$SOURCE"}:
         return value
     return shlex.quote(value)
-
-
-def _env_shell_ref(name: str) -> str:
-    return f'"${name}"'
 
 
 def _bridge_deploy_target(config: StackConfig, device: str) -> BridgeDeployTarget | None:
@@ -448,8 +360,7 @@ def _format_deploy_template(template: str, **values: str) -> str:
         return template.format(**values)
     except (KeyError, ValueError) as exc:
         raise StackConfigError(
-            "deploy bridge templates can only use these placeholders: "
-            "{device}, {devices}, {profile}, {env}, {firmware}."
+            "deploy bridge templates can only use the {device} placeholder."
         ) from exc
 
 

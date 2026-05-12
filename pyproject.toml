@@ -13,7 +13,7 @@ authors = [{ name = "Labo Smart Home maintainers" }]
 dependencies = []
 
 [project.scripts]
-lsh-stack = "lsh_stack_config.cli:main"
+lsh-stack = "lsh_stack_config.cli:entrypoint"
 
 [project.optional-dependencies]
 dev = [
