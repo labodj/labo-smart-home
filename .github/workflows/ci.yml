@@ -1,8 +1,9 @@
-name: CI
+name: CI & Release
 
 on:
   push:
     branches: ["main", "master"]
+    tags: ["v*"]
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
@@ -107,3 +108,81 @@ jobs:
           test -s "$tmpdir/core-only/lsh_devices.toml"
           test -s "$tmpdir/core-only/platformio.ini"
           grep -F "platformio run -e core_panel" "$tmpdir/core-only/README.md"
+
+  release:
+    name: Publish GitHub Release
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout labo-smart-home
+        uses: actions/checkout@v6
+        with:
+          path: labo-smart-home
+
+      - name: Checkout lsh-core contract provider
+        uses: actions/checkout@v6
+        with:
+          repository: labodj/lsh-core
+          path: lsh-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify package version matches tag
+        working-directory: labo-smart-home
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PACKAGE_VERSION=$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          print(tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])
+          PY
+          )
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: pyproject.toml version ($PACKAGE_VERSION) does not match tag version ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build lsh-stack.pyz
+        working-directory: labo-smart-home
+        run: |
+          mkdir -p dist
+          python -m zipapp src \
+            -m 'lsh_stack_config.cli:entrypoint' \
+            -o dist/lsh-stack.pyz \
+            -p '/usr/bin/env python3'
+          chmod +x dist/lsh-stack.pyz
+
+      - name: Smoke-test lsh-stack.pyz
+        working-directory: labo-smart-home
+        run: |
+          python dist/lsh-stack.pyz --version
+          python dist/lsh-stack.pyz --help
+          tmpdir="$(mktemp -d)"
+          python dist/lsh-stack.pyz new "$tmpdir/installation"
+          grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
+          if python dist/lsh-stack.pyz new "$tmpdir/legacy.toml"; then
+            echo "legacy single-file new target unexpectedly succeeded"
+            exit 1
+          fi
+          python dist/lsh-stack.pyz check --config "$tmpdir/installation/lsh_stack.toml"
+          python dist/lsh-stack.pyz setup --config "$tmpdir/installation/lsh_stack.toml"
+          python dist/lsh-stack.pyz new-core "$tmpdir/core-only"
+          test -s "$tmpdir/core-only/lsh_devices.toml"
+          test -s "$tmpdir/core-only/platformio.ini"
+          grep -F "platformio run -e core_panel" "$tmpdir/core-only/README.md"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: labo-smart-home ${{ github.ref_name }}
+          generate_release_notes: true
+          files: labo-smart-home/dist/lsh-stack.pyz
