@@ -42,7 +42,10 @@ def test_lsh_stack_new_uses_zipapp_launcher_command(
 
     assert cli.main(["new", str(project)]) == 0
     readme = (project / "README.md").read_text(encoding="utf-8")
+    stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
     assert f"/usr/bin/python3 {archive} setup" in readme
+    assert "[bridge.defaults.build_flags]" in stack_toml
+    assert '# append = ["-Wall"]' in stack_toml
 
 
 def test_lsh_stack_entrypoint_preserves_error_exit_code(
@@ -207,10 +210,13 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
         in core_ini
     )
     assert "LSH OTA <device>" in generated_readme
-    assert "lsh-stack ota" in generated_readme
+    assert " ota panel" in generated_readme
     assert "OTA custom targets are not generated until" not in generated_readme
     assert "bridge-platformio-flags/bridge.txt" in generated_readme
+    assert "platformio-bridge-targets.py" in generated_readme
     assert "bridge_usb_panel" in generated_readme
+    assert "--protocol msgpack" in generated_readme
+    assert "--config" in generated_readme
     assert "Developer: Reload Window" in generated_readme
 
 
@@ -266,11 +272,24 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     assert "ota_updater.py" not in ota_script_text
     assert "def _prompt_for_password_env" in ota_script_text
     assert "def _check_python_ota_dependencies" in ota_script_text
+    assert "def _print_wrapper_help" in ota_script_text
+    assert 'root / "bridge" / ".pio" / "libdeps"' in ota_script_text
     assert "paho-mqtt" in ota_script_text
-    assert '"--help" in passthrough' in ota_script_text
+    assert "def _help_requested" in ota_script_text
     assert "MQTT/OTA password" in ota_script_text
     assert "subprocess.run(" in ota_script_text
     assert "[sys.executable, str(updater), *passthrough]" in ota_script_text
+    help_result = subprocess.run(  # noqa: S603 - generated tmp_path script under test.
+        [sys.executable, str(ota_script), "--help"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert help_result.returncode == 0
+    assert "Generated LSH bridge OTA wrapper." in help_result.stdout
+    assert "lsh-stack ota [device...]" in help_result.stdout
+    assert "Could not find" not in help_result.stderr
     assert json.loads(ota_config.read_text(encoding="utf-8")) == {
         "schema": "homie-ota-config/v1",
         "broker": {
@@ -290,10 +309,43 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
         expected_command,
         expected_command.replace("--device-id panel", "--device-id lights"),
     ]
-    assert "lsh-stack ota panel" in generated_readme
-    assert "\nlsh-stack ota\n" in generated_readme
+    assert " ota panel" in generated_readme
+    assert " ota\n" in generated_readme
     assert stack_export["deploy"]["bridge"]["ota"]["brokerPasswordEnv"] == "LSH_OTA_PASSWORD"
     assert stack_export["deploy"]["bridge"]["ota"]["baseTopic"] is None
+
+
+def test_generated_readme_uses_zipapp_launcher_for_stack_ota(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated OTA docs should match the launcher used to run the pyz."""
+    archive = tmp_path / "lsh-stack.pyz"
+    archive.write_bytes(b"zipapp")
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [deploy.bridge]
+        default_method = "ota"
+
+        [deploy.bridge.ota]
+        broker_host = "mqtt.lan"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+    monkeypatch.setattr(sys, "argv", [str(archive), "generate"])
+    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    generated_readme = (output_dir / "README.generated.md").read_text(encoding="utf-8")
+    assert f"/usr/bin/python3 {archive} ota panel" in generated_readme
+    assert "lsh-stack ota" not in generated_readme
 
 
 def test_stack_config_generated_readme_hides_ota_when_no_ota_template(
@@ -324,11 +376,14 @@ def test_stack_config_generated_readme_hides_ota_when_no_ota_template(
     assert "OTA custom targets are not generated until" in generated_readme
     assert "LSH OTA <device>" not in generated_readme
     assert "bridge-platformio-flags/bridge.txt" in generated_readme
-    assert "Developer: Reload Window" in generated_readme
+    assert "platformio-bridge-targets.py" not in generated_readme
+    assert "Developer: Reload Window" not in generated_readme
     assert "core/platformio.ini" in generated_readme
     assert "bridge/platformio.ini" in generated_readme
     assert "bridge_batch" not in generated_readme
     assert "root `platformio.ini`" not in generated_readme
+    assert not (output_dir / "platformio-bridge-targets.py").exists()
+    assert not (output_dir / "platformio-bridge-batch.py").exists()
 
 
 def test_stack_config_writes_bridge_profiles_custom_ota_and_batch_targets(
@@ -371,26 +426,29 @@ def test_stack_config_writes_bridge_profiles_custom_ota_and_batch_targets(
 
     bridge_ini = (output_dir / "platformio-bridge.ini").read_text(encoding="utf-8")
     deploy_plan = json.loads((output_dir / "deploy-plan.json").read_text(encoding="utf-8"))
-    batch_script = (output_dir / "platformio-bridge-batch.py").read_text(encoding="utf-8")
+    targets_script = (output_dir / "platformio-bridge-targets.py").read_text(encoding="utf-8")
 
     assert "[env:bridge_release]" in bridge_ini
     assert "extends = stack_bridge_release" in bridge_ini
     assert "[env:bridge_littlefs]" in bridge_ini
     assert "extends = stack_bridge_littlefs" in bridge_ini
-    assert "[env:bridge]" in bridge_ini
-    assert "extends = env:bridge_littlefs" in bridge_ini
+    assert "[platformio]\ndefault_envs = bridge_littlefs" in bridge_ini
+    assert "[env:bridge]\n" not in bridge_ini
+    assert "extends = env:bridge_littlefs" not in bridge_ini
     assert "custom_lsh_stack_ota_template = {python}" in bridge_ini
     assert "bridge-ota.py --config" in bridge_ini
     assert "custom_lsh_stack_ota_devices =" in bridge_ini
-    assert "[env:bridge_batch]" in bridge_ini
-    assert "custom_lsh_stack_batch_build_envs =" in bridge_ini
+    assert "[env:bridge_batch]" not in bridge_ini
+    assert "custom_lsh_stack_batch_build_envs =" not in bridge_ini
     assert "bridge_release" in bridge_ini
     assert "bridge_littlefs" in bridge_ini
-    assert "env.AddCustomTarget(" in batch_script
-    assert "import sys" in batch_script
-    assert "sys.exit(exit_code)" in batch_script
-    assert 'title=f"LSH OTA {device_id}"' in batch_script
-    assert 'title="LSH OTA All"' in batch_script
+    assert "env.AddCustomTarget(" in targets_script
+    assert "import sys" in targets_script
+    assert "sys.exit(exit_code)" in targets_script
+    assert "lambda" not in targets_script
+    assert "lsh_build_all" not in targets_script
+    assert 'title=f"LSH OTA {device_id}"' in targets_script
+    assert 'title="LSH OTA All"' in targets_script
 
     firmware = deploy_plan["bridgeFirmware"]
     assert firmware["defaultProfile"] == "littlefs"
@@ -432,6 +490,8 @@ def test_stack_config_writes_node_red_gui_setup_guide(tmp_path: Path) -> None:
 
     assert "`exposeStateContext` | `global`" in guide
     assert "`exposeConfigContext` | `global`" in guide
+    assert "LSH Base Path" in guide
+    assert "Lsh Base Path" not in guide
     assert "`protocol` | `msgpack`" in guide
     assert "Paste this into the `System Config JSON` field" in guide
     assert '"devices"' in guide
@@ -661,7 +721,9 @@ def test_lsh_stack_new_creates_personal_project_shape(tmp_path: Path) -> None:
     bridge_platformio = (project / "bridge" / "platformio.ini").read_text(encoding="utf-8")
     assert "Optional stack overlay" in bridge_platformio
     assert "[lsh_bridge_standalone_contract]" in bridge_platformio
-    assert "[env:bridge]" in bridge_platformio
+    assert "default_envs = bridge_littlefs" in bridge_platformio
+    assert "[env:bridge_littlefs]" in bridge_platformio
+    assert "[env:bridge]\n" not in bridge_platformio
 
     stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
     assert 'devices = "core/lsh_devices.toml"' in stack_toml
@@ -675,6 +737,23 @@ def test_lsh_stack_new_creates_personal_project_shape(tmp_path: Path) -> None:
     readme = (project / "README.md").read_text(encoding="utf-8")
     assert "lsh-stack.py generate" in readme
     assert "uv run" not in readme
+
+
+def test_lsh_stack_new_reports_existing_files_on_separate_lines(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Existing starter conflicts stay readable when many files already exist."""
+    project = tmp_path / "my-lsh-installation"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["new", str(project)]) == 2
+
+    error = capsys.readouterr().err
+    assert "starter files already exist:" in error
+    assert f"- {project / 'README.md'}" in error
+    assert "Pass --force to overwrite them." in error
 
 
 def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> None:
@@ -733,16 +812,22 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
     def fake_compose(_path: Path) -> tuple[StackConfig, JsonObject]:
         nonlocal compose_calls
         compose_calls += 1
-        if compose_calls == 1:
-            raise StackConfigError("cannot find lsh-core generator")
         return config, stack
 
     run_commands: list[list[str]] = []
 
-    def fake_run(command: list[str], *, check: bool = False) -> SimpleNamespace:
+    def fake_run(
+        command: list[str],
+        *,
+        check: bool = False,
+        capture_output: bool = False,
+        text: bool = False,
+    ) -> SimpleNamespace:
         assert not check
+        assert capture_output
+        assert text
         run_commands.append(command)
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(cli, "_compose", fake_compose)
     monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: ["platformio"])
@@ -751,11 +836,12 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
 
     assert cli.main(["setup"]) == 0
 
-    assert compose_calls == 2
+    assert compose_calls == 1
     assert run_commands == [["platformio", "run", "-d", str(project / "core"), "-e", "core_panel"]]
     assert (project / "generated" / "README.generated.md").is_file()
     output = capsys.readouterr().out
     assert "lsh-core generator not found; building the core project once" in output
+    assert "lsh-core bootstrap build succeeded." in output
     assert "setup complete" in output
     assert "next steps:" in output
     assert f"bridge build: platformio run -d {project / 'bridge'} -e bridge_littlefs" in output
@@ -799,6 +885,7 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     config = load_stack_config(config_path)
     stack = compose_stack(config, _starter_core_export())
 
+    monkeypatch.setattr(cli, "_should_bootstrap_core_project", lambda _config: False)
     monkeypatch.setattr(cli, "_compose", lambda _path: (config, stack))
     monkeypatch.chdir(stack_project)
 
@@ -897,6 +984,46 @@ def test_lsh_stack_ota_builds_and_updates_selected_devices(
     assert "bridge-ota.py" in output
 
 
+def test_lsh_stack_ota_checks_password_before_building(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing OTA secrets fail before an expensive bridge firmware build starts."""
+    (tmp_path / "bridge").mkdir()
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        bridge_project = "bridge"
+
+        [deploy.bridge.ota]
+        broker_host = "mqtt.lan"
+        broker_username = "homie"
+        broker_password_env = "LSH_OTA_PASSWORD"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+    run_commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        run_commands.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.delenv("LSH_OTA_PASSWORD", raising=False)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(cli, "_compose", lambda _path: (config, stack))
+    monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: ["platformio"])
+    monkeypatch.setattr("lsh_stack_config.cli_runtime.subprocess.run", fake_run)
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["ota", "panel"]) == 2
+    assert run_commands == []
+
+
 def test_lsh_stack_ota_dry_run_does_not_require_platformio(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -964,8 +1091,8 @@ def test_lsh_stack_new_supports_documented_first_use_without_sibling_repos(
         text=True,
     )
     assert bridge_config.returncode == 0, bridge_config.stderr + bridge_config.stdout
-    assert "env:bridge" in bridge_config.stdout
     assert "env:bridge_littlefs" in bridge_config.stdout
+    assert "env:bridge\n" not in bridge_config.stdout
     assert "ProjectEnvsNotAvailableError" not in bridge_config.stderr
 
     core_tool = project / "core" / ".pio" / "libdeps" / "core_panel" / "lsh-core" / "tools"
@@ -987,7 +1114,7 @@ def test_lsh_stack_new_supports_documented_first_use_without_sibling_repos(
     generated_readme = (project / "generated" / "README.generated.md").read_text(encoding="utf-8")
     assert "OTA custom targets are not generated until" in generated_readme
     assert "LSH OTA <device>" not in generated_readme
-    assert "bridge_batch" in generated_readme
+    assert "bridge_batch" not in generated_readme
 
 
 def test_lsh_stack_explain_reports_one_device(
@@ -1011,7 +1138,7 @@ def test_lsh_stack_explain_reports_one_device(
     output = capsys.readouterr().out
     assert "controller environment: core_panel" in output
     assert "bridge firmware environment: bridge" in output
-    assert "bridge OTA target: LSH OTA panel" in output
+    assert "bridge OTA target: not configured" in output
     assert "coordinator systemConfig entry" in output
 
 
@@ -1064,6 +1191,7 @@ def test_lsh_stack_doctor_does_not_warn_for_separate_platformio_projects(
     output = capsys.readouterr().out
     assert "warnings:" not in output
     assert "No stack configuration problems found." in output
+    assert "LSH stack composer" not in output
 
 
 def test_lsh_stack_doctor_warns_when_platformio_does_not_include_generated_fragment(

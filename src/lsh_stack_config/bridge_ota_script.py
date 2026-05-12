@@ -89,7 +89,7 @@ def _config_password_env(config: Path | None) -> str | None:
 
 
 def _prompt_for_password_env(config: Path | None, passthrough: list[str]) -> None:
-    if "-h" in passthrough or "--help" in passthrough:
+    if _help_requested(passthrough):
         return
     if _option_present(passthrough, ("--broker-password", "-d")):
         return
@@ -139,18 +139,30 @@ def _candidate_updaters() -> list[Path]:
     for root in _candidate_roots():
         candidates.append(root / "homie-esp8266" / UPDATER_RELATIVE_PATH)
         candidates.append(root / UPDATER_RELATIVE_PATH)
-        libdeps = root / ".pio" / "libdeps"
-        if libdeps.is_dir():
-            candidates.extend(sorted(libdeps.glob("*/homie-v5/scripts/homie_ota.py")))
-            candidates.extend(sorted(libdeps.glob("*/homie-esp8266/scripts/homie_ota.py")))
+        for libdeps in (root / ".pio" / "libdeps", root / "bridge" / ".pio" / "libdeps"):
+            if libdeps.is_dir():
+                candidates.extend(sorted(libdeps.glob("*/homie-v5/scripts/homie_ota.py")))
+                candidates.extend(sorted(libdeps.glob("*/homie-esp8266/scripts/homie_ota.py")))
     return _unique(candidates)
 
 
-def _find_updater(explicit: Path | None) -> Path:
+def _help_requested(passthrough: list[str]) -> bool:
+    return "-h" in passthrough or "--help" in passthrough
+
+
+def _find_updater_or_none(explicit: Path | None) -> Path | None:
     candidates = [explicit] if explicit is not None else _candidate_updaters()
     for candidate in candidates:
         if candidate is not None and candidate.is_file():
             return candidate.resolve()
+    return None
+
+
+def _find_updater(explicit: Path | None) -> Path:
+    candidates = [explicit] if explicit is not None else _candidate_updaters()
+    updater = _find_updater_or_none(explicit)
+    if updater is not None:
+        return updater
     searched = "\\n".join(f"- {candidate}" for candidate in candidates if candidate is not None)
     print(
         "Could not find the homie-esp8266 OTA updater.\\n"
@@ -163,6 +175,19 @@ def _find_updater(explicit: Path | None) -> Path:
     raise SystemExit(2)
 
 
+def _print_wrapper_help() -> None:
+    print(
+        "usage: bridge-ota.py [--updater PATH] --config bridge-ota.json "
+        "--device-id DEVICE firmware\\n\\n"
+        "Generated LSH bridge OTA wrapper.\\n\\n"
+        "Normal use:\\n"
+        "  lsh-stack ota [device...]\\n\\n"
+        "The upstream Homie OTA updater is loaded from the bridge project's "
+        "PlatformIO libdeps after the bridge project has been built once. "
+        f"You can also pass --updater PATH or set {UPDATER_ENV}."
+    )
+
+
 def _module_available(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is not None
@@ -171,7 +196,7 @@ def _module_available(name: str) -> bool:
 
 
 def _check_python_ota_dependencies(passthrough: list[str]) -> None:
-    if "-h" in passthrough or "--help" in passthrough:
+    if _help_requested(passthrough):
         return
     if _module_available("paho.mqtt"):
         return
@@ -186,6 +211,15 @@ def _check_python_ota_dependencies(passthrough: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     explicit, config, passthrough = _extract_wrapper_args(sys.argv[1:] if argv is None else argv)
+    if _help_requested(passthrough):
+        updater = _find_updater_or_none(explicit)
+        if updater is None:
+            _print_wrapper_help()
+            return 0
+        return subprocess.run(
+            [sys.executable, str(updater), *passthrough],
+            check=False,
+        ).returncode
     _prompt_for_password_env(config, passthrough)
     updater = _find_updater(explicit)
     _check_python_ota_dependencies(passthrough)

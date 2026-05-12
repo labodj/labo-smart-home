@@ -61,7 +61,7 @@ def _resolve_core_tool(core: CoreSettings, *, override_tool: Path | None) -> Pat
         return _existing_tool(Path(env_tool).expanduser())
 
     candidates = (
-        *_installed_lsh_core_tools(core.devices.parent),
+        *installed_lsh_core_tools(core.devices.parent),
         core.devices.parent.parent / "lsh-core" / _TOOL_RELATIVE_PATH,
         Path.cwd() / "lsh-core" / _TOOL_RELATIVE_PATH,
         Path.cwd().parent / "lsh-core" / _TOOL_RELATIVE_PATH,
@@ -77,7 +77,8 @@ def _resolve_core_tool(core: CoreSettings, *, override_tool: Path | None) -> Pat
     )
 
 
-def _installed_lsh_core_tools(project_dir: Path) -> tuple[Path, ...]:
+def installed_lsh_core_tools(project_dir: Path) -> tuple[Path, ...]:
+    """Return lsh-core generator tools installed in a PlatformIO project."""
     libdeps = project_dir / ".pio" / "libdeps"
     return tuple(sorted(libdeps.glob("*/lsh-core/tools/generate_lsh_static_config.py")))
 

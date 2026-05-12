@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
@@ -15,9 +16,10 @@ from .cli_runtime import (
     subprocess_env_with_ota_password,
 )
 from .composer import compose_stack
-from .core_export import load_core_export
+from .core_export import installed_lsh_core_tools, load_core_export
 from .doctor import doctor_fix, project_warnings
 from .errors import StackConfigError
+from .launcher import lsh_stack_command
 from .models import JsonObject, StackConfig
 from .parser import load_stack_config
 from .render import render_report, stack_json, write_output_tree
@@ -151,6 +153,9 @@ def _setup(args: argparse.Namespace) -> int:
     output_dir = _output_dir(config_path)
     scaffold_config = load_stack_config(config_path)
     scaffolded = ensure_project_scaffolds(scaffold_config)
+    bootstrap_result = _bootstrap_core_if_needed(scaffold_config)
+    if bootstrap_result != 0:
+        return bootstrap_result
     try:
         config, stack = _compose(config_path)
     except StackConfigError as exc:
@@ -203,6 +208,12 @@ def _ota(args: argparse.Namespace) -> int:
     bridge_project = _bridge_project(config)
     build_env = bridge_build_env(config, profile)
     firmware = bridge_project / ".pio" / "build" / build_env / "firmware.bin"
+    ota_script = output_dir / "bridge-ota.py"
+    ota_config = output_dir / "bridge-ota.json"
+    if not ota_script.is_file() or not ota_config.is_file():
+        raise StackConfigError("generated bridge OTA files are missing; run setup first.")
+
+    env = subprocess_env_with_ota_password(ota_config, dry_run=args.dry_run)
 
     build_result = run_or_print(
         [
@@ -223,12 +234,6 @@ def _ota(args: argparse.Namespace) -> int:
     if not args.dry_run and not firmware.is_file():
         raise StackConfigError(f"firmware not found: {firmware}")
 
-    ota_script = output_dir / "bridge-ota.py"
-    ota_config = output_dir / "bridge-ota.json"
-    if not ota_script.is_file() or not ota_config.is_file():
-        raise StackConfigError("generated bridge OTA files are missing; run setup first.")
-
-    env = subprocess_env_with_ota_password(ota_config, dry_run=args.dry_run)
     failures = 0
     for device in selected_devices:
         command = _bridge_ota_command_args(
@@ -276,13 +281,12 @@ def _check(args: argparse.Namespace) -> int:
 def _doctor(args: argparse.Namespace) -> int:
     sys.stdout.write("LSH stack doctor\n")
     try:
-        config, stack = _compose(args.config)
+        config, _stack = _compose(args.config)
     except StackConfigError as exc:
         sys.stdout.write(f"problem: {exc}\n")
         sys.stdout.write(f"fix: {doctor_fix(str(exc))}\n")
         return 1
 
-    sys.stdout.write(render_report(config, stack))
     warnings = project_warnings(config, _output_dir(args.config))
     if warnings:
         sys.stdout.write("warnings:\n")
@@ -310,7 +314,8 @@ def _explain(args: argparse.Namespace) -> int:
         raise StackConfigError(f"unknown device: {args.device}")
 
     core_env = env_name(config.platformio.core_env_prefix, args.device)
-    bridge_env = bridge_build_env(config, default_bridge_profile(bridge_profiles(config)))
+    default_profile = default_bridge_profile(bridge_profiles(config))
+    bridge_env = bridge_build_env(config, default_profile)
 
     sys.stdout.write(f"LSH stack explain: {args.device}\n")
     sys.stdout.write(f"- controller TOML: {config.core.devices}\n")
@@ -321,7 +326,10 @@ def _explain(args: argparse.Namespace) -> int:
         flags = [str(flag) for flag in json_list(bridge["platformioBuildFlags"])]
         sys.stdout.write(f"- bridge firmware environment: {bridge_env}\n")
         sys.stdout.write(f"- bridge USB upload: PlatformIO Upload on {bridge_env}\n")
-        sys.stdout.write(f"- bridge OTA target: LSH OTA {bridge_key or args.device}\n")
+        if config.deploy.bridge.ota is not None and default_profile.ota:
+            sys.stdout.write(f"- bridge OTA target: LSH OTA {bridge_key or args.device}\n")
+        else:
+            sys.stdout.write("- bridge OTA target: not configured\n")
         if topics:
             sys.stdout.write("- MQTT topics:\n")
             for name, topic in sorted(topics.items()):
@@ -344,6 +352,19 @@ def _compose(config_path: Path) -> tuple[StackConfig, JsonObject]:
 
 def _missing_core_tool_error(exc: StackConfigError) -> bool:
     return "cannot find lsh-core generator" in str(exc)
+
+
+def _bootstrap_core_if_needed(config: StackConfig) -> int:
+    if not _should_bootstrap_core_project(config):
+        return 0
+    return bootstrap_core_project(config)
+
+
+def _should_bootstrap_core_project(config: StackConfig) -> bool:
+    if config.core.tool is not None or os.environ.get("LSH_CORE_TOOL"):
+        return False
+    project = config.platformio.core_project or config.core.devices.parent
+    return not installed_lsh_core_tools(project)
 
 
 def _validate_stack_ota_support(config: StackConfig) -> None:
@@ -414,19 +435,12 @@ def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: 
 
 
 def _stack_ota_cli_command(config: StackConfig, device: str | None = None) -> str:
-    parts = [*_lsh_stack_command_parts(), "ota"]
+    parts = [lsh_stack_command(), "ota"]
     if config.path.name != "lsh_stack.toml":
         parts.extend(["--config", _display_config_path(config.path)])
     if device is not None:
         parts.append(device)
     return " ".join(parts)
-
-
-def _lsh_stack_command_parts() -> list[str]:
-    argv0 = Path(sys.argv[0])
-    if argv0.name == "lsh-stack.py":
-        return ["python", str(argv0)]
-    return ["lsh-stack"]
 
 
 def _display_config_path(path: Path) -> str:

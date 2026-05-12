@@ -149,6 +149,11 @@ fails clearly until that firmware path exists.
 lives: the controller can use serial MsgPack while MQTT, the coordinator and Node-RED
 stay on JSON.
 
+`mqtt.codec = "auto"` follows the protocol exported by the selected controller profile.
+With the current public serial bridge presets that resolves to `msgpack`. Set `json` or
+`msgpack` explicitly when you want the generated coordinator, Node-RED and bridge MQTT
+configuration to stay obvious during bring-up.
+
 ## Examples
 
 Use the smallest file that matches where you are in the bring-up:
@@ -371,17 +376,26 @@ otherwise from `[mqtt].homie_base_path`. Use `broker_password_env` or
 helper reads the environment variable at execution time, so secrets do not appear in
 generated PlatformIO commands.
 
-Build-all and OTA-all are generated as PlatformIO custom targets so they are available
-in the IDE:
+Build-all stays a direct PlatformIO CLI command to avoid nested PlatformIO runs from
+inside a custom target:
 
-- Project Tasks -> `bridge_batch` -> Custom -> `LSH Build All`
+```bash
+platformio run -d bridge \
+  -e bridge_release \
+  -e bridge_debug \
+  -e bridge_littlefs \
+  -e bridge_littlefs_migration \
+  -e bridge_littlefs_debug \
+  -e bridge_littlefs_migration_debug
+```
+
+OTA-all is still generated as a PlatformIO custom target on the selected profile
+environment because one selected firmware is uploaded to one or more devices:
+
 - Project Tasks -> `bridge_littlefs` -> Custom -> `LSH OTA All`
 
-`bridge_batch` builds every generated firmware profile. OTA lives on the selected
-profile environment because one selected firmware is uploaded to one or more devices.
-
-The equivalent subset OTA form is the OTA helper with the generated config file and the
-desired device:
+From the bridge project directory, the equivalent subset OTA form is the OTA helper with
+the generated config file and the desired device:
 
 ```bash
 python ../generated/bridge-ota.py \

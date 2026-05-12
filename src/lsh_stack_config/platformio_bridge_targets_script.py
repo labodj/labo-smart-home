@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def render_platformio_bridge_batch_script() -> str:
+def render_platformio_bridge_targets_script() -> str:
     """Render a tiny PlatformIO extra script that adds IDE-visible stack targets."""
     return """\
 \"\"\"Generated PlatformIO targets for LSH bridge environments.\"\"\"
@@ -80,25 +80,26 @@ def _run_ota(devices: list[str]) -> None:
         _execute(_format_ota_command(template, device))
 
 
-build_envs = _items(\"custom_lsh_stack_batch_build_envs\")
-ota_devices = _items(\"custom_lsh_stack_ota_devices\")
-ota_envs = _items(\"custom_lsh_stack_batch_ota_envs\")
+def _make_ota_target(device: str):
+    def lsh_ota_target(*_args, **_kwargs) -> None:
+        _run_ota([device])
 
-if build_envs:
-    env.AddCustomTarget(
-        \"lsh_build_all\",
-        None,
-        lambda *_args, **_kwargs: _run_platformio(build_envs),
-        title=\"LSH Build All\",
-        description=\"Build all generated LSH bridge environments in this batch.\",
-    )
+    lsh_ota_target.__name__ = f\"lsh_ota_{device}\"
+    return lsh_ota_target
+
+
+def _lsh_ota_all_target(*_args, **_kwargs) -> None:
+    _run_ota(ota_devices)
+
+
+ota_devices = _items(\"custom_lsh_stack_ota_devices\")
 
 if ota_devices:
     for device_id in ota_devices:
         env.AddCustomTarget(
             f\"lsh_ota_{device_id}\",
             None,
-            lambda *_args, device_id=device_id, **_kwargs: _run_ota([device_id]),
+            _make_ota_target(device_id),
             title=f\"LSH OTA {device_id}\",
             description=f\"Build this bridge firmware and OTA-upload it to {device_id}.\",
         )
@@ -106,16 +107,8 @@ if ota_devices:
     env.AddCustomTarget(
         \"lsh_ota_all\",
         None,
-        lambda *_args, **_kwargs: _run_ota(ota_devices),
+        _lsh_ota_all_target,
         title=\"LSH OTA All\",
         description=\"Build this bridge firmware and OTA-upload it to all configured devices.\",
-    )
-elif ota_envs:
-    env.AddCustomTarget(
-        \"lsh_ota_all\",
-        None,
-        lambda *_args, **_kwargs: _run_platformio(ota_envs, \"upload\"),
-        title=\"LSH OTA All\",
-        description=\"Build and OTA-upload all generated LSH bridge environments in this batch.\",
     )
 """

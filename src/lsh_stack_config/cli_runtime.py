@@ -35,7 +35,17 @@ def bootstrap_core_project(config: StackConfig) -> int:
     sys.stdout.write("lsh-core generator not found; building the core project once.\n")
     sys.stdout.write("running: " + " ".join(command) + "\n")
     sys.stdout.flush()
-    completed = subprocess.run(command, check=False)  # noqa: S603 - PlatformIO path is resolved.
+    completed = subprocess.run(  # noqa: S603 - PlatformIO path is resolved.
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        sys.stdout.write(completed.stdout)
+        sys.stderr.write(completed.stderr)
+    else:
+        sys.stdout.write("lsh-core bootstrap build succeeded.\n")
     return int(completed.returncode)
 
 
@@ -77,6 +87,7 @@ def run_or_print(
 ) -> int:
     """Run a subprocess command, or print it in dry-run mode."""
     sys.stdout.write("running: " + " ".join(command) + "\n")
+    sys.stdout.flush()
     if dry_run:
         return 0
     completed = subprocess.run(command, check=False, env=env)  # noqa: S603 - argv is explicit.

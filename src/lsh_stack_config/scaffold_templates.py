@@ -93,6 +93,10 @@ default_method = "usb"
 # CONFIG_ARDCOM_SERIAL_RX_PIN = "16U"
 # CONFIG_ARDCOM_SERIAL_TX_PIN = "17U"
 
+[bridge.defaults.build_flags]
+# Raw flags are appended after generated flags and typed defines.
+# append = ["-Wall"]
+
 # [[network_clicks]]
 # source = "panel.logic_button"
 # type = "long"
@@ -217,7 +221,7 @@ kind = bridge-esp32-homie
 version = {TEMPLATE_VERSION}
 
 [platformio]
-default_envs = bridge
+default_envs = bridge_littlefs
 ; Optional stack overlay. If this generated file is missing, the standalone
 ; environments declared below still build from the local wide bridge profile.
 extra_configs = ../generated/platformio-bridge.ini
@@ -396,9 +400,6 @@ extends = lsh_bridge_littlefs_migration_debug
 build_flags =
     ${{lsh_bridge_littlefs_migration_debug.build_flags}}
     ${{lsh_bridge_standalone_contract.build_flags}}
-
-[env:bridge]
-extends = env:bridge_littlefs
 """
 
 BOOTSTRAP_CORE_INI = """; Bootstrap file created by lsh-stack new.
@@ -473,14 +474,6 @@ extends = lsh_bridge_littlefs
 build_flags =
     ${lsh_bridge_littlefs.build_flags}
     ${lsh_stack_bridge_wide.build_flags}
-
-[env:bridge]
-extends = env:bridge_littlefs
-
-[env:bridge_batch]
-extends = lsh_bridge_littlefs
-custom_lsh_stack_batch_build_envs =
-    bridge_littlefs
 """
 
 CORE_MAIN_TEMPLATE = """#include <lsh.hpp>
@@ -571,7 +564,7 @@ When you intentionally want separated steps:
 Build the default bridge firmware:
 
 ```bash
-platformio run -d bridge -e bridge
+platformio run -d bridge -e bridge_littlefs
 ```
 
 In VSCode, open `core/` or `bridge/` and use the same environments from PlatformIO

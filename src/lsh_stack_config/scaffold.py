@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 from .errors import StackConfigError
+from .launcher import lsh_stack_command, source_checkout_root
 from .models import StackConfig
 from .platformio_utils import path_for_platformio
 from .render_common import env_name
@@ -32,12 +33,11 @@ GENERATED_DIR_NAME = "generated"
 def write_starter(path: Path, *, force: bool) -> int:
     """Write a complete starter project."""
     _validate_project_dir(path, command="lsh-stack new")
-    lsh_stack_command = _lsh_stack_command()
-    files = _starter_files(path, lsh_stack_command)
+    command = lsh_stack_command()
+    files = _starter_files(path, command)
     conflicts = [target for target in files if target.exists() and not force]
     if conflicts:
-        names = ", ".join(str(target) for target in conflicts)
-        raise StackConfigError(f"starter files already exist: {names}; pass --force to overwrite.")
+        raise StackConfigError(_conflict_message("starter files", conflicts))
 
     path.mkdir(parents=True, exist_ok=True)
     (path / "generated").mkdir(exist_ok=True)
@@ -45,7 +45,7 @@ def write_starter(path: Path, *, force: bool) -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 
-    _print_next_steps(path, lsh_stack_command)
+    _print_next_steps(path, command)
     return 0
 
 
@@ -55,10 +55,7 @@ def write_core_starter(path: Path, *, force: bool) -> int:
     files = _core_starter_files(path)
     conflicts = [target for target in files if target.exists() and not force]
     if conflicts:
-        names = ", ".join(str(target) for target in conflicts)
-        raise StackConfigError(
-            f"core starter files already exist: {names}; pass --force to overwrite."
-        )
+        raise StackConfigError(_conflict_message("core starter files", conflicts))
 
     path.mkdir(parents=True, exist_ok=True)
     for target, content in files.items():
@@ -81,9 +78,9 @@ def _validate_project_dir(path: Path, *, command: str) -> None:
         raise StackConfigError(f"{command} target exists but is not a directory: {path}")
 
 
-def _starter_files(path: Path, lsh_stack_command: str) -> dict[Path, str]:
+def _starter_files(path: Path, command: str) -> dict[Path, str]:
     return {
-        path / "README.md": PROJECT_README_TEMPLATE.format(lsh_stack_command=lsh_stack_command),
+        path / "README.md": PROJECT_README_TEMPLATE.format(lsh_stack_command=command),
         path / "lsh_stack.toml": STACK_TEMPLATE,
         path / "core" / "lsh_devices.toml": DEVICES_TEMPLATE,
         path / "core" / "platformio.ini": CORE_PLATFORMIO_TEMPLATE,
@@ -233,35 +230,12 @@ def _print_next_steps(path: Path, lsh_stack_command: str) -> None:
     )
 
 
-def _lsh_stack_command() -> str:
-    zipapp = _zipapp_command()
-    if zipapp is not None:
-        return zipapp
-    project = _source_checkout_root()
-    if project is None:
-        return "lsh-stack"
-    launcher = project / "lsh-stack.py"
-    if launcher.is_file():
-        return f"python {_command_arg(launcher)}"
-    return "python -m lsh_stack_config"
-
-
-def _zipapp_command() -> str | None:
-    archive = Path(sys.argv[0])
-    if archive.suffix != ".pyz" or not archive.is_file():
-        return None
-    return f"{_command_arg(Path(sys.executable))} {_command_arg(archive.resolve())}"
-
-
-def _command_arg(path: Path) -> str:
-    text = str(path)
-    if not text or any(char.isspace() for char in text):
-        return '"' + text.replace('"', '\\"') + '"'
-    return text
-
-
 def _source_checkout_root() -> Path | None:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "pyproject.toml").is_file() and (parent / "src" / "lsh_stack_config").is_dir():
-            return parent
-    return None
+    return source_checkout_root()
+
+
+def _conflict_message(label: str, conflicts: list[Path]) -> str:
+    lines = [f"{label} already exist:"]
+    lines.extend(f"- {target}" for target in conflicts)
+    lines.append("Pass --force to overwrite them.")
+    return "\n".join(lines)
