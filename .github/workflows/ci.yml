@@ -98,6 +98,20 @@ jobs:
           tmpdir="$(mktemp -d)"
           python dist/lsh-stack.pyz new "$tmpdir/installation"
           grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
+          core_tool="$(pwd)/../lsh-core/tools/generate_lsh_static_config.py"
+          python - "$tmpdir/installation/lsh_stack.toml" "$core_tool" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          core_tool = sys.argv[2]
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              '# tool = "../lsh-core/tools/generate_lsh_static_config.py"',
+              f'tool = "{core_tool}"',
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
           if python dist/lsh-stack.pyz new "$tmpdir/legacy.toml"; then
             echo "legacy single-file new target unexpectedly succeeded"
             exit 1
@@ -169,6 +183,20 @@ jobs:
           tmpdir="$(mktemp -d)"
           python dist/lsh-stack.pyz new "$tmpdir/installation"
           grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
+          core_tool="$(pwd)/../lsh-core/tools/generate_lsh_static_config.py"
+          python - "$tmpdir/installation/lsh_stack.toml" "$core_tool" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          core_tool = sys.argv[2]
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              '# tool = "../lsh-core/tools/generate_lsh_static_config.py"',
+              f'tool = "{core_tool}"',
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
           if python dist/lsh-stack.pyz new "$tmpdir/legacy.toml"; then
             echo "legacy single-file new target unexpectedly succeeded"
             exit 1
