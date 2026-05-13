@@ -131,6 +131,7 @@ def ensure_project_scaffolds(config: StackConfig) -> list[Path]:
                 device=first_device,
             )
         )
+    files.update(_core_optional_files(core_project=core_project, devices_path=config.core.devices))
     if not (bridge_project / "platformio.ini").exists():
         files.update(
             _bridge_project_files(

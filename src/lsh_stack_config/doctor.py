@@ -49,6 +49,12 @@ def project_warnings(config: StackConfig, output_dir: Path) -> list[str]:
     if not (generated_dir / "platformio-bridge.ini").exists():
         missing = generated_dir / "platformio-bridge.ini"
         warnings.append(f"run generate before opening PlatformIO: missing {display_path(missing)}.")
+    if (
+        config.platformio.core_prefer_system_tools
+        and not (generated_dir / "platformio-core-system-tools.py").exists()
+    ):
+        missing = generated_dir / "platformio-core-system-tools.py"
+        warnings.append(f"run generate before core builds: missing {display_path(missing)}.")
 
     warnings.extend(
         _platformio_fragment_warnings(

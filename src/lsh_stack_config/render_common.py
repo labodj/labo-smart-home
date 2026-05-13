@@ -6,7 +6,7 @@ import re
 from typing import cast
 
 from .errors import StackConfigError
-from .models import BridgeProfileSettings, JsonObject, StackConfig
+from .models import BridgeProfileSettings, CoreProfileSettings, JsonObject, StackConfig
 
 _SLUG_RE = re.compile(r"[^A-Za-z0-9_]+")
 
@@ -63,6 +63,37 @@ def bridge_profiles(config: StackConfig) -> tuple[BridgeProfileSettings, ...]:
     )
 
 
+def core_profiles(config: StackConfig) -> tuple[CoreProfileSettings, ...]:
+    """Return explicit core profiles or the implicit default release profile."""
+    if config.platformio.core_profiles:
+        profiles = config.platformio.core_profiles
+        if any(profile.default for profile in profiles):
+            return profiles
+        first, *rest = profiles
+        return (
+            CoreProfileSettings(
+                name=first.name,
+                base_env=first.base_env,
+                default=True,
+            ),
+            *rest,
+        )
+    return (
+        CoreProfileSettings(
+            name="",
+            base_env=config.platformio.core_base_env,
+            default=True,
+        ),
+    )
+
+
+def default_core_profile(
+    profiles: tuple[CoreProfileSettings, ...],
+) -> CoreProfileSettings:
+    """Return the profile marked as default, falling back to the first profile."""
+    return next((profile for profile in profiles if profile.default), profiles[0])
+
+
 def default_bridge_profile(
     profiles: tuple[BridgeProfileSettings, ...],
 ) -> BridgeProfileSettings:
@@ -70,8 +101,8 @@ def default_bridge_profile(
     return next((profile for profile in profiles if profile.default), profiles[0])
 
 
-def profile_key(profile: BridgeProfileSettings) -> str:
-    """Return the stable deploy-plan key for a bridge profile."""
+def profile_key(profile: BridgeProfileSettings | CoreProfileSettings) -> str:
+    """Return the stable deploy-plan key for a firmware profile."""
     return profile.name or "default"
 
 
@@ -81,6 +112,12 @@ def bridge_build_env(config: StackConfig, profile: BridgeProfileSettings) -> str
     if profile.name:
         pieces.append(slug(profile.name))
     return "_".join(pieces)
+
+
+def core_build_env(config: StackConfig, device: str, profile: CoreProfileSettings) -> str:
+    """Return the PlatformIO build environment name for a core profile and device."""
+    suffix = None if profile.default else profile.name
+    return env_name(config.platformio.core_env_prefix, device, suffix)
 
 
 def bridge_usb_upload_env(

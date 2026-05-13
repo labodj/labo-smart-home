@@ -73,9 +73,27 @@
         "bridge_project": { "type": "string", "minLength": 1 },
         "core_extra_script": { "type": "string", "minLength": 1 },
         "core_base_env": { "type": "string", "minLength": 1 },
+        "core_profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/coreProfile" },
+          "uniqueItems": true,
+          "allOf": [
+            {
+              "not": {
+                "contains": {
+                  "type": "object",
+                  "required": ["default"],
+                  "properties": { "default": { "const": true } }
+                },
+                "minContains": 2
+              }
+            }
+          ]
+        },
         "bridge_base_env": { "type": "string", "minLength": 1 },
         "core_env_prefix": { "type": "string", "minLength": 1 },
         "bridge_env_prefix": { "type": "string", "minLength": 1 },
+        "core_prefer_system_tools": { "type": "boolean" },
         "bridge_profiles": {
           "type": "array",
           "items": { "$ref": "#/$defs/bridgeProfile" },
@@ -235,6 +253,16 @@
       "properties": {
         "defines": { "$ref": "#/$defs/defines" },
         "build_flags": { "$ref": "#/$defs/bridgeBuildFlags" }
+      }
+    },
+    "coreProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "extends"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "extends": { "type": "string", "minLength": 1 },
+        "default": { "type": "boolean" }
       }
     },
     "bridgeProfile": {

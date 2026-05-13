@@ -21,6 +21,7 @@ from .models import (
     BridgeSettings,
     ContextTarget,
     CoordinatorSettings,
+    CoreProfileSettings,
     CoreSettings,
     DefineOverride,
     DefineValue,
@@ -37,6 +38,7 @@ from .models import (
     TransportSettings,
     UploadMethod,
 )
+from .paths import absolute_path
 
 TomlTable = dict[str, object]
 
@@ -56,7 +58,7 @@ _UINT8_MAX = 255
 
 def load_stack_config(path: Path) -> StackConfig:
     """Load and normalize a stack TOML file."""
-    source = path.resolve()
+    source = absolute_path(path)
     try:
         with source.open("rb") as handle:
             raw = tomllib.load(handle)
@@ -245,13 +247,29 @@ def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
             "bridge_project",
             "core_extra_script",
             "core_base_env",
+            "core_profiles",
             "bridge_base_env",
             "core_env_prefix",
             "bridge_env_prefix",
             "bridge_profiles",
+            "core_prefer_system_tools",
         },
         "platformio",
     )
+    core_profiles = tuple(
+        _parse_core_profile(raw_profile, index)
+        for index, raw_profile in enumerate(
+            _array(table.get("core_profiles", []), "platformio.core_profiles")
+        )
+    )
+    default_core_profiles = [profile.name for profile in core_profiles if profile.default]
+    _reject_duplicates(
+        [profile.name for profile in core_profiles],
+        "platformio.core_profiles.name",
+    )
+    if len(default_core_profiles) > 1:
+        defaults = ", ".join(default_core_profiles)
+        _fail(f"only one platformio.core_profiles entry can set default = true: {defaults}.")
     bridge_profiles = tuple(
         _parse_bridge_profile(raw_profile, index)
         for index, raw_profile in enumerate(
@@ -286,6 +304,7 @@ def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
             table.get("core_base_env", "env:release"),
             "platformio.core_base_env",
         ),
+        core_profiles=core_profiles,
         bridge_base_env=_required_string(
             table.get("bridge_base_env", "env:release"),
             "platformio.bridge_base_env",
@@ -297,6 +316,22 @@ def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
             table.get("bridge_env_prefix", "bridge"), "platformio.bridge_env_prefix"
         ),
         bridge_profiles=bridge_profiles,
+        core_prefer_system_tools=_bool(
+            table.get("core_prefer_system_tools", False),
+            "platformio.core_prefer_system_tools",
+        ),
+    )
+
+
+def _parse_core_profile(raw: object, index: int) -> CoreProfileSettings:
+    path = f"platformio.core_profiles[{index}]"
+    table = _table(raw, path)
+    _reject_unknown(table, {"name", "extends", "default"}, path)
+    name = _required_string(table.get("name"), f"{path}.name")
+    return CoreProfileSettings(
+        name=name,
+        base_env=_required_string(table.get("extends"), f"{path}.extends"),
+        default=_bool(table.get("default", False), f"{path}.default"),
     )
 
 
@@ -645,7 +680,7 @@ def _path(raw: object, path: str, base_dir: Path) -> Path:
     candidate = Path(value).expanduser()
     if not candidate.is_absolute():
         candidate = base_dir / candidate
-    return candidate.resolve()
+    return absolute_path(candidate)
 
 
 def _context(raw: object, path: str) -> ContextTarget:

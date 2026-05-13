@@ -23,15 +23,17 @@ from .errors import StackConfigError
 from .launcher import lsh_stack_command
 from .models import JsonObject, StackConfig
 from .parser import load_stack_config
-from .paths import display_path
+from .paths import absolute_path, display_path
 from .render import render_report, stack_json, write_output_tree
 from .render_common import (
     bridge_build_env,
     bridge_devices,
     bridge_profiles,
+    core_build_env,
+    core_profiles,
     default_bridge_profile,
+    default_core_profile,
     device_names,
-    env_name,
     json_list,
     json_object,
 )
@@ -187,11 +189,21 @@ Examples:
         "generate": "generate stack artifacts",
         "check": "validate the stack configuration",
         "status": "show setup progress and the next action",
-        "doctor": "diagnose stack configuration problems",
     }
     for command, help_text in command_help.items():
         child = subparsers.add_parser(command, help=help_text, formatter_class=formatter)
         _add_config_option(child)
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="diagnose stack configuration problems",
+        formatter_class=formatter,
+    )
+    _add_config_option(doctor)
+    doctor.add_argument(
+        "--strict",
+        action="store_true",
+        help="return non-zero when non-fatal warnings are found",
+    )
     explain = subparsers.add_parser(
         "explain",
         help="explain generated config for one device",
@@ -212,15 +224,15 @@ def _add_config_option(parser: argparse.ArgumentParser) -> None:
 
 
 def _new(args: argparse.Namespace) -> int:
-    return write_starter(args.path.resolve(), force=args.force)
+    return write_starter(absolute_path(args.path), force=args.force)
 
 
 def _new_core(args: argparse.Namespace) -> int:
-    return write_core_starter(args.path.resolve(), force=args.force)
+    return write_core_starter(absolute_path(args.path), force=args.force)
 
 
 def _setup(args: argparse.Namespace) -> int:
-    config_path = args.config.resolve()
+    config_path = absolute_path(args.config)
     output_dir = _output_dir(config_path)
     scaffold_config = load_stack_config(config_path)
     scaffolded = ensure_project_scaffolds(scaffold_config)
@@ -261,7 +273,7 @@ def _setup(args: argparse.Namespace) -> int:
 
 
 def _ota(args: argparse.Namespace) -> int:
-    config_path = args.config_path.resolve()
+    config_path = absolute_path(args.config_path)
     output_dir = _output_dir(config_path)
     config, stack = _compose(config_path)
     available_devices = list(bridge_devices(stack))
@@ -350,7 +362,7 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _status(args: argparse.Namespace) -> int:
-    config_path = args.config.resolve()
+    config_path = absolute_path(args.config)
     config = load_stack_config(config_path)
     status = inspect_stack_status(config, _output_dir(config_path))
     sys.stdout.write(render_stack_status(status))
@@ -371,6 +383,8 @@ def _doctor(args: argparse.Namespace) -> int:
         sys.stdout.write("warnings:\n")
         for warning in warnings:
             sys.stdout.write(f"- {warning}\n")
+        if getattr(args, "strict", False):
+            return 1
     else:
         sys.stdout.write("No stack configuration problems found.\n")
     return 0
@@ -392,7 +406,11 @@ def _explain(args: argparse.Namespace) -> int:
     if system_entry is None and bridge_entry is None:
         raise StackConfigError(f"unknown device: {args.device}")
 
-    core_env = env_name(config.platformio.core_env_prefix, args.device)
+    core_env = core_build_env(
+        config,
+        args.device,
+        default_core_profile(core_profiles(config)),
+    )
     default_profile = default_bridge_profile(bridge_profiles(config))
     bridge_env = bridge_build_env(config, default_profile)
 
@@ -494,7 +512,7 @@ def _deduplicate(items: list[str]) -> list[str]:
 
 
 def _output_dir(config_path: Path) -> Path:
-    return config_path.resolve().parent / DEFAULT_OUTPUT_DIR
+    return absolute_path(config_path).parent / DEFAULT_OUTPUT_DIR
 
 
 def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: Path) -> None:
@@ -502,7 +520,11 @@ def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: 
     first_device = devices[0] if devices else "device"
     core_project = config.platformio.core_project or config.core.devices.parent
     bridge_project = config.platformio.bridge_project or config.path.parent
-    core_env = env_name(config.platformio.core_env_prefix, first_device)
+    core_env = core_build_env(
+        config,
+        first_device,
+        default_core_profile(core_profiles(config)),
+    )
     bridge_env = bridge_build_env(config, default_bridge_profile(bridge_profiles(config)))
 
     sys.stdout.write("next steps:\n")

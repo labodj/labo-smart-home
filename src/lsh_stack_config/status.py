@@ -47,8 +47,11 @@ def inspect_stack_status(config: StackConfig, output_dir: Path) -> StackStatus:
     core_project = config.platformio.core_project or config.core.devices.parent
     bridge_project = config.platformio.bridge_project or config.path.parent
     core_tool, core_tool_ready = _core_tool_status(config, core_project)
+    expected_generated_files = list(_EXPECTED_GENERATED_FILES)
+    if config.platformio.core_prefer_system_tools:
+        expected_generated_files.append("platformio-core-system-tools.py")
     generated_missing = tuple(
-        output_dir / name for name in _EXPECTED_GENERATED_FILES if not (output_dir / name).exists()
+        output_dir / name for name in expected_generated_files if not (output_dir / name).exists()
     )
     return StackStatus(
         config=config,

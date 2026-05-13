@@ -22,6 +22,7 @@ from .deploy import (
 from .models import BridgeProfileSettings, JsonObject, StackConfig
 from .paths import display_path, path_from
 from .platformio_bridge_targets_script import render_platformio_bridge_targets_script
+from .platformio_core_system_tools_script import render_platformio_core_system_tools_script
 from .platformio_utils import (
     inherited_option_values,
     path_for_platformio,
@@ -35,14 +36,14 @@ from .render_common import (
     bridge_flag_section,
     bridge_profiles,
     bridge_usb_upload_env,
+    core_build_env,
+    core_profiles,
     default_bridge_profile,
+    default_core_profile,
     device_names,
     json_list,
     json_object,
     profile_key,
-)
-from .render_common import (
-    env_name as stack_env_name,
 )
 
 
@@ -116,9 +117,16 @@ def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) 
     flag_path.write_text("\n".join(str(flag) for flag in bridge_flags) + "\n", encoding="utf-8")
     written.append(flag_path)
 
+    core_system_tools_script_path = _write_core_system_tools_script(output_dir, config, written)
+
     core_ini_path = output_dir / "platformio-core.ini"
     core_ini_path.write_text(
-        render_platformio_core_ini(config, stack, core_ini_path),
+        render_platformio_core_ini(
+            config,
+            stack,
+            core_ini_path,
+            core_system_tools_script_path,
+        ),
         encoding="utf-8",
     )
     written.append(core_ini_path)
@@ -179,6 +187,21 @@ def _write_bridge_targets_script(
     return None
 
 
+def _write_core_system_tools_script(
+    output_dir: Path,
+    config: StackConfig,
+    written: list[Path],
+) -> Path | None:
+    script_path = output_dir / "platformio-core-system-tools.py"
+    if config.platformio.core_prefer_system_tools:
+        script_path.write_text(render_platformio_core_system_tools_script(), encoding="utf-8")
+        written.append(script_path)
+        return script_path
+    if script_path.exists():
+        script_path.unlink()
+    return None
+
+
 def _write_bridge_ota_artifacts(
     output_dir: Path,
     config: StackConfig,
@@ -204,9 +227,11 @@ def render_platformio_core_ini(
     config: StackConfig,
     stack: JsonObject,
     ini_path: Path,
+    system_tools_script_path: Path | None = None,
 ) -> str:
     """Render PlatformIO environments for controller firmware builds."""
     devices = device_names(stack)
+    profiles = core_profiles(config)
     core_project = config.platformio.core_project
     config_path = path_for_platformio(config.core.devices, core_project)
     ini_ref = path_for_platformio(ini_path, core_project)
@@ -222,19 +247,24 @@ def render_platformio_core_ini(
     ]
 
     for device in devices:
-        env_name = stack_env_name(config.platformio.core_env_prefix, device)
-        script_path = _core_extra_script_path(config, env_name)
-        extra_scripts = _core_extra_script_lines(config, script_path)
-        lines.extend(
-            [
-                f"[env:{env_name}]",
-                f"extends = {config.platformio.core_base_env}",
-                *extra_scripts,
-                "custom_lsh_config = ${lsh_stack_core.custom_lsh_config}",
-                f"custom_lsh_device = {device}",
-                "",
-            ]
-        )
+        for profile in profiles:
+            env_name = core_build_env(config, device, profile)
+            script_entries = _core_extra_script_entries(
+                config,
+                env_name,
+                system_tools_script_path,
+            )
+            extra_scripts = _core_extra_script_lines(config, profile.base_env, script_entries)
+            lines.extend(
+                [
+                    f"[env:{env_name}]",
+                    f"extends = {profile.base_env}",
+                    *extra_scripts,
+                    "custom_lsh_config = ${lsh_stack_core.custom_lsh_config}",
+                    f"custom_lsh_device = {device}",
+                    "",
+                ]
+            )
 
     return "\n".join(lines)
 
@@ -346,7 +376,11 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
     bridge_project = _project_command_path(config.platformio.bridge_project, stack_root)
     core_project = _project_command_path(config.platformio.core_project, stack_root)
     first_device = devices[0] if devices else "device"
-    core_env = stack_env_name(config.platformio.core_env_prefix, first_device)
+    core_env = core_build_env(
+        config,
+        first_device,
+        default_core_profile(core_profiles(config)),
+    )
     core_extra_config = path_for_platformio(
         output_dir / "platformio-core.ini", config.platformio.core_project
     )
@@ -355,6 +389,7 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         config.platformio.bridge_project,
     )
     bridge_device_names = list(bridge_devices(stack))
+    controller_profiles = core_profiles(config)
     profiles = bridge_profiles(config)
     default_profile = default_bridge_profile(profiles)
     bridge_env = bridge_build_env(config, default_profile)
@@ -362,6 +397,11 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         device for device in bridge_device_names if bridge_usb_port(config, device) is not None
     ]
     bridge_build_envs = [bridge_build_env(config, profile) for profile in profiles]
+    core_build_envs = [
+        core_build_env(config, device, profile)
+        for device in devices
+        for profile in controller_profiles
+    ]
     bridge_profile_names = ", ".join(profile_key(profile) for profile in profiles)
     has_multiple_bridge_profiles = len(profiles) > 1
     bridge_ota_script_path = (
@@ -422,6 +462,12 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         "",
         "```bash",
         " ".join(pio_command(core_project, [core_env], target=None)),
+        "```",
+        "",
+        "Build every controller firmware profile:",
+        "",
+        "```bash",
+        " ".join(pio_command(core_project, core_build_envs, target=None)),
         "```",
         "",
         "Build the default wide bridge firmware:",
@@ -584,6 +630,14 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
             "- `node-red-lsh-logic.json`: raw Node-RED `lsh-logic` node fields for scripts.",
             "- `bridge-platformio-flags/bridge.txt`: bridge `build_flags` as a plain list.",
             "- `platformio-core.ini`: controller build environments.",
+            *(
+                [
+                    "- `platformio-core-system-tools.py`: optional PlatformIO PATH helper "
+                    "for controller builds."
+                ]
+                if config.platformio.core_prefer_system_tools
+                else []
+            ),
             "- `platformio-bridge.ini`: bridge build and upload environments.",
             *(
                 ["- `platformio-bridge-targets.py`: PlatformIO IDE OTA helper targets."]
@@ -606,6 +660,10 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
             "",
             "Keep hand-written PlatformIO extensions and local notes outside `generated/`, "
             "usually in `overrides/`, `core/platformio.ini` or `bridge/platformio.ini`.",
+            "Deep compiler, linker, board, package and local toolchain choices stay in "
+            "those PlatformIO files. Use `platformio.core_prefer_system_tools = true` "
+            "only when generated core environments must prepend system compiler "
+            "directories before PlatformIO packages.",
             "Bridge `defines` in `lsh_stack.toml` replace generated `-D` flags with the "
             "same name before raw appended flags are added.",
         ]
@@ -771,7 +829,7 @@ def _coordinator_cli_options(options: JsonObject) -> list[str]:
     return cli_options
 
 
-def _core_extra_script_path(config: StackConfig, env_name: str) -> str:
+def _core_static_config_script_path(config: StackConfig, env_name: str) -> str:
     configured = config.platformio.core_extra_script
     if configured is not None:
         return path_for_platformio(configured, config.platformio.core_project)
@@ -783,37 +841,65 @@ def _core_extra_script_path(config: StackConfig, env_name: str) -> str:
     return f".pio/libdeps/{env_name}/lsh-core/tools/platformio_lsh_static_config.py"
 
 
-def _core_extra_script_lines(config: StackConfig, script_path: str) -> list[str]:
-    base_extra_scripts = _base_extra_scripts(config)
-    script_entry = f"pre:{script_path}"
-    if script_entry_present(script_entry, base_extra_scripts):
+def _core_extra_script_entries(
+    config: StackConfig,
+    env_name: str,
+    system_tools_script_path: Path | None,
+) -> list[str]:
+    entries: list[str] = []
+    if system_tools_script_path is not None:
+        system_script = path_for_platformio(
+            system_tools_script_path,
+            config.platformio.core_project,
+        )
+        entries.append(f"pre:{system_script}")
+    entries.append(f"pre:{_core_static_config_script_path(config, env_name)}")
+    return entries
+
+
+def _core_extra_script_lines(
+    config: StackConfig,
+    base_env: str,
+    script_entries: list[str],
+) -> list[str]:
+    base_extra_scripts = _base_extra_scripts(config, base_env)
+    missing_entries = [
+        entry for entry in script_entries if not script_entry_present(entry, base_extra_scripts)
+    ]
+    if not missing_entries:
         return []
-    base_extra_scripts_reference = _base_extra_scripts_reference(config, base_extra_scripts)
+    base_extra_scripts_reference = _base_extra_scripts_reference(base_env, base_extra_scripts)
     if base_extra_scripts_reference is not None:
+        before_base = [
+            entry for entry in missing_entries if "platformio-core-system-tools.py" in entry
+        ]
+        after_base = [entry for entry in missing_entries if entry not in before_base]
         return [
             "extra_scripts =",
+            *[f"    {entry}" for entry in before_base],
             f"    {base_extra_scripts_reference}",
-            f"    {script_entry}",
+            *[f"    {entry}" for entry in after_base],
         ]
-    return [f"extra_scripts = {script_entry}"]
+    if len(missing_entries) == 1:
+        return [f"extra_scripts = {missing_entries[0]}"]
+    return ["extra_scripts =", *[f"    {entry}" for entry in missing_entries]]
 
 
-def _base_extra_scripts(config: StackConfig) -> list[str]:
+def _base_extra_scripts(config: StackConfig, base_env: str) -> list[str]:
     parser = read_platformio_config(config.platformio.core_project)
     if parser is None:
         return []
     return inherited_option_values(
         parser,
-        config.platformio.core_base_env,
+        base_env,
         "extra_scripts",
     )
 
 
 def _base_extra_scripts_reference(
-    config: StackConfig,
+    base_env: str,
     base_extra_scripts: list[str],
 ) -> str | None:
-    base_env = config.platformio.core_base_env
     if not base_extra_scripts:
         return None
     return f"${{{base_env}.extra_scripts}}"

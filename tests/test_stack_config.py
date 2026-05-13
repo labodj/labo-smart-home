@@ -590,6 +590,150 @@ def test_stack_config_derives_local_core_extra_script_and_preserves_base_scripts
     assert ".pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
 
 
+def test_stack_config_writes_core_profiles_for_each_device(tmp_path: Path) -> None:
+    """Core profiles generate one environment per profile and selected controller."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "common_release"
+        default = true
+
+        [[platformio.core_profiles]]
+        name = "debug"
+        extends = "common_debug"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    deploy_plan = json.loads((output_dir / "deploy-plan.json").read_text(encoding="utf-8"))
+
+    assert "[env:core_panel]" in core_ini
+    assert "extends = common_release" in core_ini
+    assert "[env:core_panel_debug]" in core_ini
+    assert "extends = common_debug" in core_ini
+    assert "[env:core_lights]" in core_ini
+    assert "[env:core_lights_debug]" in core_ini
+    assert deploy_plan["coreProfiles"] == [
+        {"name": "release", "baseEnv": "common_release", "default": True},
+        {"name": "debug", "baseEnv": "common_debug", "default": False},
+    ]
+    assert deploy_plan["core"]["panel"]["env"] == "core_panel"
+    assert deploy_plan["core"]["panel"]["profiles"]["debug"]["env"] == "core_panel_debug"
+    assert deploy_plan["batch"]["buildAllCoreProfiles"] == [
+        "platformio",
+        "run",
+        "-d",
+        str(tmp_path / "core"),
+        "-e",
+        "core_panel",
+        "-e",
+        "core_panel_debug",
+        "-e",
+        "core_lights",
+        "-e",
+        "core_lights_debug",
+    ]
+
+
+def test_stack_config_preserves_symlinked_core_config_paths(tmp_path: Path) -> None:
+    """Generated paths should match the user's project layout, not resolved symlink targets."""
+    core_project = tmp_path / "core"
+    core_project.mkdir()
+    real_devices = tmp_path / "real" / "lsh_devices.toml"
+    real_devices.parent.mkdir()
+    real_devices.write_text("", encoding="utf-8")
+    try:
+        (core_project / "lsh_devices.toml").symlink_to(real_devices)
+    except OSError:
+        pytest.skip("filesystem does not support symlinks in this test environment")
+
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "core/lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _starter_core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+
+    assert "custom_lsh_config = lsh_devices.toml" in core_ini
+    assert str(real_devices) not in core_ini
+
+
+def test_stack_config_can_prepend_system_tools_for_core_builds(tmp_path: Path) -> None:
+    """The optional system-tool helper is generated only when explicitly requested."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        core_prefer_system_tools = true
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _starter_core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    helper = output_dir / "platformio-core-system-tools.py"
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    helper_text = helper.read_text(encoding="utf-8")
+
+    assert helper.is_file()
+    assert "pre:../generated/platformio-core-system-tools.py" in core_ini
+    assert "pre:.pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" in core_ini
+    assert "LSH_PLATFORMIO_SYSTEM_TOOL_DIRS" in helper_text
+    compile(helper_text, str(helper), "exec")
+
+
+def test_stack_config_rejects_duplicate_core_profiles(tmp_path: Path) -> None:
+    """Core profile names are env suffixes and must stay unique."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [[platformio.core_profiles]]
+        name = "debug"
+        extends = "common_debug"
+
+        [[platformio.core_profiles]]
+        name = "debug"
+        extends = "other_debug"
+        """,
+    )
+
+    with pytest.raises(StackConfigError, match=r"platformio\.core_profiles\.name\[1\]"):
+        load_stack_config(config_path)
+
+
 def test_stack_config_does_not_duplicate_inherited_core_extra_script(tmp_path: Path) -> None:
     """Existing base lsh-core scripts are inherited rather than emitted twice."""
     core_project = tmp_path / "lsh-core-personal"
@@ -1121,6 +1265,41 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     assert "created project files:" in output
 
 
+def test_lsh_stack_setup_materializes_missing_etl_header_for_existing_core_project(
+    tmp_path: Path,
+) -> None:
+    """Changing core TOML features should still create the optional ETL header."""
+    core_project = tmp_path / "core"
+    core_project.mkdir()
+    (core_project / "platformio.ini").write_text("[platformio]\n", encoding="utf-8")
+    devices_path = core_project / "lsh_devices.toml"
+    devices_path.write_text(
+        """
+        schema_version = 2
+
+        [features]
+        etl_profile_override_header = "lsh_etl_profile_override.h"
+        """,
+        encoding="utf-8",
+    )
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "core/lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        """,
+    )
+
+    written = scaffold.ensure_project_scaffolds(load_stack_config(config_path))
+
+    header = core_project / "include" / "lsh_etl_profile_override.h"
+    assert header in written
+    assert header.is_file()
+
+
 def test_lsh_stack_ota_builds_and_updates_selected_devices(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1434,6 +1613,8 @@ def test_lsh_stack_doctor_warns_when_platformio_does_not_include_generated_fragm
     output = capsys.readouterr().out
     assert "warnings:" in output
     assert "core platformio.ini should include `../generated/platformio-core.ini`" in output
+
+    assert cli.main(["doctor", "--strict", "--config", str(project / "lsh_stack.toml")]) == 1
 
 
 def test_lsh_stack_doctor_uses_project_relative_missing_file_paths(

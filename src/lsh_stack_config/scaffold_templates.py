@@ -46,10 +46,20 @@ other_actors_context = "global"
 [platformio]
 core_project = "core"
 bridge_project = "bridge"
-core_base_env = "common_release"
 bridge_base_env = "lsh_bridge_release"
 core_env_prefix = "core"
 bridge_env_prefix = "bridge"
+# Uncomment only when local core compiler flags need a system AVR toolchain.
+# core_prefer_system_tools = true
+
+[[platformio.core_profiles]]
+name = "release"
+extends = "common_release"
+default = true
+
+[[platformio.core_profiles]]
+name = "debug"
+extends = "common_debug"
 
 [[platformio.bridge_profiles]]
 name = "release"

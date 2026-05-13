@@ -81,6 +81,15 @@ class BridgeProfileSettings:
 
 
 @dataclass(frozen=True)
+class CoreProfileSettings:
+    """One controller firmware flavor generated for every selected core device."""
+
+    name: str
+    base_env: str
+    default: bool = False
+
+
+@dataclass(frozen=True)
 class PlatformioSettings:
     """How generated PlatformIO fragments plug into consumer firmware projects."""
 
@@ -88,10 +97,12 @@ class PlatformioSettings:
     bridge_project: Path | None = None
     core_extra_script: Path | None = None
     core_base_env: str = "env:release"
+    core_profiles: tuple[CoreProfileSettings, ...] = ()
     bridge_base_env: str = "env:release"
     core_env_prefix: str = "core"
     bridge_env_prefix: str = "bridge"
     bridge_profiles: tuple[BridgeProfileSettings, ...] = ()
+    core_prefer_system_tools: bool = False
 
 
 @dataclass(frozen=True)

@@ -19,9 +19,11 @@ from .render_common import (
     bridge_devices,
     bridge_profiles,
     bridge_usb_upload_env,
+    core_build_env,
+    core_profiles,
     default_bridge_profile,
+    default_core_profile,
     device_names,
-    env_name,
     json_object,
     profile_key,
 )
@@ -44,17 +46,29 @@ def render_deploy_plan(
     bridge_device_names = list(bridge_devices(stack))
     profiles = bridge_profiles(config)
     default_profile = default_bridge_profile(profiles)
+    controller_profiles = core_profiles(config)
+    default_controller_profile = default_core_profile(controller_profiles)
     core_devices = device_names(stack)
     core_project = project_command_path(config.platformio.core_project)
     bridge_project = project_command_path(config.platformio.bridge_project)
 
     core_plan: JsonObject = {}
     for device in core_devices:
-        env_name = _core_env_name(config, device)
+        env_name = core_build_env(config, device, default_controller_profile)
         core_plan[device] = {
             "env": env_name,
             "buildCommand": pio_command(core_project, [env_name], target=None),
             "uploadCommand": pio_command(core_project, [env_name], target="upload"),
+            "profiles": {
+                profile_key(profile): {
+                    "env": (profile_env := core_build_env(config, device, profile)),
+                    "baseEnv": profile.base_env,
+                    "default": profile.default,
+                    "buildCommand": pio_command(core_project, [profile_env], target=None),
+                    "uploadCommand": pio_command(core_project, [profile_env], target="upload"),
+                }
+                for profile in controller_profiles
+            },
         }
 
     profile_plan: JsonObject = {}
@@ -98,10 +112,23 @@ def render_deploy_plan(
         }
 
     all_bridge_profile_build_envs = [bridge_build_env(config, profile) for profile in profiles]
+    all_core_profile_build_envs = [
+        core_build_env(config, device, profile)
+        for device in core_devices
+        for profile in controller_profiles
+    ]
     return {
         "schema": "lsh-stack-deploy-plan/v1",
         "coreProject": core_project,
         "bridgeProject": bridge_project,
+        "coreProfiles": [
+            {
+                "name": profile_key(profile),
+                "baseEnv": profile.base_env,
+                "default": profile.default,
+            }
+            for profile in controller_profiles
+        ],
         "bridgeProfiles": [
             {
                 "name": profile_key(profile),
@@ -115,6 +142,11 @@ def render_deploy_plan(
         "bridgeFirmware": bridge_firmware,
         "bridge": bridge_plan,
         "batch": {
+            "buildAllCoreProfiles": pio_command(
+                core_project,
+                all_core_profile_build_envs,
+                target=None,
+            ),
             "buildAllBridgeProfiles": pio_command(
                 bridge_project,
                 all_bridge_profile_build_envs,
@@ -362,10 +394,6 @@ def _format_deploy_template(template: str, **values: str) -> str:
         raise StackConfigError(
             "deploy bridge templates can only use the {device} placeholder."
         ) from exc
-
-
-def _core_env_name(config: StackConfig, device: str) -> str:
-    return env_name(config.platformio.core_env_prefix, device)
 
 
 def _set_if_not_none(target: JsonObject, key: str, value: object | None) -> None:

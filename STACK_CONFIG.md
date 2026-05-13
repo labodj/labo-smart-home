@@ -272,8 +272,27 @@ Command-line examples:
 
 ```bash
 platformio run -d core -e core_j1
+platformio run -d core -e core_j1_debug
 platformio run -d bridge -e bridge_littlefs
 ```
+
+Use core profiles when every selected controller should get the same firmware variants:
+
+```toml
+[[platformio.core_profiles]]
+name = "release"
+extends = "common_release"
+default = true
+
+[[platformio.core_profiles]]
+name = "debug"
+extends = "common_debug"
+```
+
+The default core profile keeps the short environment name, such as `core_j1`. Other
+profiles append their name, such as `core_j1_debug`. If you do not define
+`platformio.core_profiles`, the generator creates exactly one controller profile from
+`platformio.core_base_env`.
 
 The bridge config uses the maximum required stack limits for `CONFIG_MAX_*` defines,
 such as actuators, buttons, indicators when present and name length. That means
@@ -313,10 +332,11 @@ If you do not define `platformio.bridge_profiles`, the generator creates exactly
 bridge profile from `platformio.bridge_base_env`. It is reported as `default` in
 `deploy-plan.json` and rendered as the normal `bridge` PlatformIO environment.
 
-With profiles enabled, `bridge` is the friendly alias for the default profile. Explicit
-profile environments are also generated, for example `bridge_release`, `bridge_debug`,
-`bridge_littlefs`, `bridge_littlefs_migration`, `bridge_littlefs_debug` and
-`bridge_littlefs_migration_debug`.
+With explicit profiles, the generated environment names include the profile name, for
+example `bridge_release`, `bridge_debug`, `bridge_littlefs`,
+`bridge_littlefs_migration`, `bridge_littlefs_debug` and
+`bridge_littlefs_migration_debug`. The default profile is recorded in `deploy-plan.json`
+and used by stack OTA commands.
 
 Advanced PlatformIO users still have room to extend. Create your own environment that
 extends a generated one, then add local flags, upload ports or extra scripts:
@@ -376,6 +396,12 @@ otherwise from `[mqtt].homie_base_path`. Use `broker_password_env` or
 helper reads the environment variable at execution time, so secrets do not appear in
 generated PlatformIO commands.
 
+For interactive use, prefer `lsh-stack ota`: if `broker_password_env` is configured and
+the variable is missing, it prompts for the password before building. For automation,
+set the environment variable with your shell or CI secret mechanism.
+`lsh-stack ota --dry-run` prints the build and upload commands without requiring
+PlatformIO or the password.
+
 Build-all stays a direct PlatformIO CLI command to avoid nested PlatformIO runs from
 inside a custom target:
 
@@ -415,8 +441,12 @@ Configure friendly USB upload environments in TOML:
 [platformio]
 core_project = "../core"
 bridge_project = "../bridge"
-core_base_env = "env:release"
 bridge_base_env = "env:release"
+
+[[platformio.core_profiles]]
+name = "release"
+extends = "env:release"
+default = true
 
 [deploy.bridge.devices.j1]
 usb_port = "/dev/ttyUSB0"
@@ -429,8 +459,16 @@ environments such as `bridge_littlefs_usb_j1` and records the exact commands in
 If your project uses a custom base section, point the generated environments at it:
 
 ```toml
+[[platformio.core_profiles]]
+name = "release"
+extends = "common_release"
+default = true
+
+[[platformio.core_profiles]]
+name = "debug"
+extends = "common_debug"
+
 [platformio]
-core_base_env = "common_release"
 bridge_base_env = "bridge_base"
 ```
 
@@ -457,6 +495,28 @@ core_extra_script = "../lsh-core/tools/platformio_lsh_static_config.py"
 
 When the core base environment already defines `extra_scripts`, the generated env keeps
 those inherited scripts and appends the LSH pre-build generator.
+
+If `lsh_devices.toml` sets `features.etl_profile_override_header`, `setup` scaffolds a
+matching header in the core project's `include/` directory when the project shell is
+missing. Existing projects should keep that header in the core PlatformIO project, not
+under `generated/`.
+
+If an AVR project deliberately uses compiler flags that require a newer system toolchain
+than PlatformIO's bundled package, enable the generated PATH helper:
+
+```toml
+[platformio]
+core_prefer_system_tools = true
+```
+
+On Linux and macOS the helper prepends common system tool directories. On Windows, or
+when your toolchain lives elsewhere, set `LSH_PLATFORMIO_SYSTEM_TOOL_DIRS` to an
+`os.pathsep`-separated directory list before running PlatformIO. Keep the actual
+compiler, linker, board and package choices in `core/platformio.ini`; the stack only
+generates the small cross-platform PATH hook.
+
+Use `lsh-stack doctor --strict` in CI or before a release when warnings should fail the
+command instead of being printed as operator guidance.
 
 ## Persistent Overrides
 
@@ -505,13 +565,13 @@ local scripts and hand-written PlatformIO extensions in `overrides/`,
 The stack composer owns options that must stay aligned across repositories. It should
 not absorb every low-level firmware or service-manager knob.
 
-| Area                      | Owned by stack TOML                                                                                                                                   | Owned elsewhere                                                                                                                                                  |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Controller profile        | `core.devices`, optional `core.tool`, selected devices and generated PlatformIO environments.                                                         | `lsh_devices.toml`: hardware include, serial objects, controller timing, serial codec, resources, local clicks, indicators, scenes, IDs and advanced core flags. |
-| MQTT contract             | MQTT payload codec, LSH base path, Homie base path, service topic, generated bridge topics, coordinator subscriptions and Node-RED protocol fields.   | Broker URL, credentials, TLS files, MQTT client id and service-manager details.                                                                                  |
-| Bridge firmware           | Per-device capacity flags, topic flags, QoS policy, serial baud/timeout values mirrored from the controller, serial/MQTT codec flags and upload envs. | ESP32 board selection, Wi-Fi/Homie provisioning, UART RX/TX pins, Homie firmware identity, debug/reset flags, ETL overrides and deep queue/runtime tuning.       |
-| Coordinator system config | Device list, network-click actor targets, external actor names, generated `system-config.json` and coordinator timing used by LSH logic.              | Standalone process wiring such as broker connection, TLS, log level, alert publication topic and systemd/container supervision.                                  |
-| Node-RED wrapper          | `lsh-logic` fields for protocol, topics, inline system config, context exports, external-actor context and LSH timing.                                | The surrounding flow: MQTT broker node credentials, Home Assistant/Zigbee/Tasmota routing, dashboards and presentation.                                          |
+| Area                      | Owned by stack TOML                                                                                                                                   | Owned elsewhere                                                                                                                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Controller profile        | `core.devices`, optional `core.tool`, selected devices, core firmware profiles and the optional system-tool PATH hook.                                | `lsh_devices.toml`: hardware include, serial objects, controller timing, serial codec, resources, local clicks, indicators, scenes, IDs, compiler/linker flags and advanced core flags. |
+| MQTT contract             | MQTT payload codec, LSH base path, Homie base path, service topic, generated bridge topics, coordinator subscriptions and Node-RED protocol fields.   | Broker URL, credentials, TLS files, MQTT client id and service-manager details.                                                                                                         |
+| Bridge firmware           | Per-device capacity flags, topic flags, QoS policy, serial baud/timeout values mirrored from the controller, serial/MQTT codec flags and upload envs. | ESP32 board selection, Wi-Fi/Homie provisioning, UART RX/TX pins, Homie firmware identity, debug/reset flags, ETL overrides and deep queue/runtime tuning.                              |
+| Coordinator system config | Device list, network-click actor targets, external actor names, generated `system-config.json` and coordinator timing used by LSH logic.              | Standalone process wiring such as broker connection, TLS, log level, alert publication topic and systemd/container supervision.                                                         |
+| Node-RED wrapper          | `lsh-logic` fields for protocol, topics, inline system config, context exports, external-actor context and LSH timing.                                | The surrounding flow: MQTT broker node credentials, Home Assistant/Zigbee/Tasmota routing, dashboards and presentation.                                                                 |
 
 Current coverage is intentionally complete for the LSH contract: one stack TOML can
 generate a valid controller build matrix, tailored bridge build matrix, coordinator
