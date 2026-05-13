@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "labo-smart-home"
-version = "0.1.1"
+version = "0.1.2"
 description = "End-to-end Labo Smart Home stack configuration composer"
 readme = "README.md"
 requires-python = ">=3.11"
