@@ -52,7 +52,8 @@ def write_starter(path: Path, *, force: bool) -> int:
 def write_core_starter(path: Path, *, force: bool) -> int:
     """Write a standalone lsh-core PlatformIO project."""
     _validate_project_dir(path, command="lsh-stack new-core")
-    files = _core_starter_files(path)
+    command = lsh_stack_command()
+    files = _core_starter_files(path, command)
     conflicts = [target for target in files if target.exists() and not force]
     if conflicts:
         raise StackConfigError(_conflict_message("core starter files", conflicts))
@@ -94,14 +95,14 @@ def _starter_files(path: Path, command: str) -> dict[Path, str]:
     }
 
 
-def _core_starter_files(path: Path) -> dict[Path, str]:
+def _core_starter_files(path: Path, command: str) -> dict[Path, str]:
     platformio_ini = CORE_PLATFORMIO_TEMPLATE.replace(
         "extra_configs = ../generated/platformio-core.ini",
         "extra_configs = generated/platformio-core.ini",
     )
     platformio_ini = platformio_ini.replace("Optional stack overlay", "Optional generated overlay")
     return {
-        path / "README.md": CORE_PROJECT_README_TEMPLATE,
+        path / "README.md": CORE_PROJECT_README_TEMPLATE.format(lsh_stack_command=command),
         path / "lsh_devices.toml": DEVICES_TEMPLATE,
         path / "platformio.ini": platformio_ini,
         path / "generated" / "platformio-core.ini": BOOTSTRAP_CORE_INI,
@@ -226,7 +227,7 @@ def _print_next_steps(path: Path, lsh_stack_command: str) -> None:
     sys.stdout.write(f"- {lsh_stack_command} setup\n")
     sys.stdout.write(
         "If PlatformIO is only available inside VSCode, open core/ and build "
-        "core_panel once from Project Tasks, then run setup again.\n"
+        f"core_panel once from Project Tasks, then run `{lsh_stack_command} setup` again.\n"
     )
 
 

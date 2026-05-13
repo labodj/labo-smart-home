@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .launcher import lsh_stack_command
 from .models import StackConfig
+from .paths import display_path
 from .platformio_utils import (
     PLATFORMIO_CONFIG_ERRORS,
     extra_configs_include,
@@ -18,7 +20,10 @@ from .scaffold_templates import TEMPLATE_VERSION
 def doctor_fix(message: str) -> str:
     """Return a short remediation hint for a known validation error."""
     if "cannot find lsh-core generator" in message:
-        return "build core_panel once from PlatformIO IDE or CLI, or set core.tool/LSH_CORE_TOOL."
+        return (
+            f"run `{lsh_stack_command()} setup`, build core_panel once from "
+            "PlatformIO IDE/CLI, or set core.tool/LSH_CORE_TOOL."
+        )
     if "not declared as network=true" in message:
         return "edit lsh_devices.toml and mark that long or super-long click as network=true."
     if "unknown actuator" in message or "unknown LSH actor device" in message:
@@ -40,10 +45,10 @@ def project_warnings(config: StackConfig, output_dir: Path) -> list[str]:
         warnings.append("create overrides/ for notes and persistent manual PlatformIO extensions.")
     if not (generated_dir / "platformio-core.ini").exists():
         missing = generated_dir / "platformio-core.ini"
-        warnings.append(f"run generate before opening PlatformIO: missing {missing}.")
+        warnings.append(f"run generate before opening PlatformIO: missing {display_path(missing)}.")
     if not (generated_dir / "platformio-bridge.ini").exists():
         missing = generated_dir / "platformio-bridge.ini"
-        warnings.append(f"run generate before opening PlatformIO: missing {missing}.")
+        warnings.append(f"run generate before opening PlatformIO: missing {display_path(missing)}.")
 
     warnings.extend(
         _platformio_fragment_warnings(
@@ -73,7 +78,7 @@ def _platformio_fragment_warnings(
 ) -> list[str]:
     platformio_ini = project / "platformio.ini"
     if not platformio_ini.exists():
-        return [f"{label} PlatformIO project is missing {platformio_ini}."]
+        return [f"{label} PlatformIO project is missing {display_path(platformio_ini)}."]
 
     try:
         parser = load_platformio_config(platformio_ini)

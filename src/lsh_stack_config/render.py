@@ -8,6 +8,7 @@ import shlex
 from pathlib import Path
 
 from .bridge_ota_script import render_bridge_ota_script
+from .commands import stack_command
 from .deploy import (
     BridgeOtaArtifacts,
     bridge_ota_command,
@@ -18,8 +19,8 @@ from .deploy import (
     render_deploy_plan,
     uses_generated_bridge_ota_script,
 )
-from .launcher import lsh_stack_command
 from .models import BridgeProfileSettings, JsonObject, StackConfig
+from .paths import display_path, path_from
 from .platformio_bridge_targets_script import render_platformio_bridge_targets_script
 from .platformio_utils import (
     inherited_option_values,
@@ -65,8 +66,8 @@ def render_report(config: StackConfig, stack: JsonObject) -> str:
 
     lines = [
         "LSH stack composer",
-        f"- stack config: {config.path}",
-        f"- core config: {config.core.devices}",
+        f"- stack config: {display_path(config.path)}",
+        f"- core config: {display_path(config.core.devices)}",
         f"- transport: {json_object(stack['transport'])['mode']}",
         f"- MQTT protocol: {stack['protocol']}",
         f"- devices: {len(devices)}",
@@ -340,9 +341,10 @@ def render_node_red_setup_guide(stack: JsonObject) -> str:
 
 def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: Path) -> str:
     """Render a friendly guide beside generated deployment artifacts."""
+    stack_root = config.path.parent
     devices = device_names(stack)
-    bridge_project = project_command_path(config.platformio.bridge_project)
-    core_project = project_command_path(config.platformio.core_project)
+    bridge_project = _project_command_path(config.platformio.bridge_project, stack_root)
+    core_project = _project_command_path(config.platformio.core_project, stack_root)
     first_device = devices[0] if devices else "device"
     core_env = stack_env_name(config.platformio.core_env_prefix, first_device)
     core_extra_config = path_for_platformio(
@@ -383,6 +385,17 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         "# Generated LSH Stack Files",
         "",
         "These files are generated from `lsh_stack.toml`. Edit the TOML files, then regenerate.",
+        "Commands below are intended to be run from the stack project root.",
+        "",
+        "## Regenerate",
+        "",
+        "After editing `lsh_stack.toml` or `core/lsh_devices.toml`:",
+        "",
+        "```bash",
+        stack_command("generate", config, config_base_dir=stack_root),
+        stack_command("doctor", config, config_base_dir=stack_root),
+        stack_command("status", config, config_base_dir=stack_root),
+        "```",
         "",
         "## PlatformIO Includes",
         "",
@@ -463,8 +476,8 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
                     "Build and OTA-upload bridge firmware from the stack CLI:",
                     "",
                     "```bash",
-                    _stack_ota_cli_command(config, sample_ota_device),
-                    _stack_ota_cli_command(config),
+                    stack_command("ota", config, sample_ota_device, config_base_dir=stack_root),
+                    stack_command("ota", config, config_base_dir=stack_root),
                     "```",
                     "",
                     "With no device argument, the stack OTA command targets every configured "
@@ -517,6 +530,7 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
     if ota_targets_available:
         lines.extend(
             [
+                "",
                 "If newly generated custom targets do not appear, run `Developer: Reload "
                 "Window`; VSCode can keep a stale PlatformIO task tree after files under "
                 "`../generated` change.",
@@ -548,7 +562,10 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
             "runtime options used by Node-RED:",
             "",
             "```bash",
-            _coordinator_cli_command(stack, output_dir / "system-config.json"),
+            _coordinator_cli_command(
+                stack,
+                path_from(stack_root, output_dir / "system-config.json"),
+            ),
             "```",
             "",
             "## Node-RED",
@@ -699,16 +716,7 @@ def _markdown_table_cell(value: str) -> str:
     return value.replace("|", r"\|").replace("`", r"\`").replace("\n", "<br>")
 
 
-def _stack_ota_cli_command(config: StackConfig, device: str | None = None) -> str:
-    parts = [lsh_stack_command(), "ota"]
-    if config.path.name != "lsh_stack.toml":
-        parts.extend(["--config", config.path.name])
-    if device is not None:
-        parts.append(device)
-    return " ".join(parts)
-
-
-def _coordinator_cli_command(stack: JsonObject, system_config_path: Path) -> str:
+def _coordinator_cli_command(stack: JsonObject, system_config_path: str) -> str:
     coordinator = json_object(stack["coordinator"])
     options = json_object(coordinator["options"])
     command = [
@@ -717,10 +725,17 @@ def _coordinator_cli_command(stack: JsonObject, system_config_path: Path) -> str
         "--broker",
         "mqtt://localhost:1883",
         "--config",
-        str(system_config_path),
+        system_config_path,
         *_coordinator_cli_options(options),
     ]
     return " ".join(shlex.quote(part) for part in command)
+
+
+def _project_command_path(path: Path | None, base_dir: Path) -> str:
+    """Return a readable project path for commands in generated docs."""
+    if path is None:
+        return project_command_path(path)
+    return path_from(base_dir, path)
 
 
 def _coordinator_cli_options(options: JsonObject) -> list[str]:

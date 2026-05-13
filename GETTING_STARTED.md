@@ -221,6 +221,18 @@ project files.
 If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
 extension and run `core_panel` -> Build once, then rerun `lsh-stack setup`.
 
+When you are unsure about the current state, run:
+
+```bash
+lsh-stack status
+```
+
+With the single-file launcher:
+
+```bash
+python /path/to/lsh-stack.pyz status
+```
+
 The expert commands remain available when you intentionally want each step separated:
 
 ```bash

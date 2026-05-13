@@ -231,6 +231,9 @@ sequence: it installs/builds the starter core once when the PlatformIO CLI is av
 regenerates `generated/`, checks the stack and prints the next build targets. The
 lower-level `generate` command still replaces only the files in `generated/`.
 
+Run `lsh-stack status` whenever you are unsure what has already been generated or which
+command should come next. It does not build firmware or rewrite files.
+
 For local or symlinked controller checkouts, set `[core].tool`; generated controller
 environments then use the matching local `platformio_lsh_static_config.py` instead of a
 `.pio/libdeps` path.

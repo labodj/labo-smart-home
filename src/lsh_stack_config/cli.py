@@ -15,6 +15,7 @@ from .cli_runtime import (
     run_or_print,
     subprocess_env_with_ota_password,
 )
+from .commands import stack_command
 from .composer import compose_stack
 from .core_export import installed_lsh_core_tools, load_core_export
 from .doctor import doctor_fix, project_warnings
@@ -22,6 +23,7 @@ from .errors import StackConfigError
 from .launcher import lsh_stack_command
 from .models import JsonObject, StackConfig
 from .parser import load_stack_config
+from .paths import display_path
 from .render import render_report, stack_json, write_output_tree
 from .render_common import (
     bridge_build_env,
@@ -34,6 +36,7 @@ from .render_common import (
     json_object,
 )
 from .scaffold import ensure_project_scaffolds, write_core_starter, write_starter
+from .status import inspect_stack_status, render_stack_status
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -53,6 +56,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "ota": _ota,
         "generate": _generate,
         "check": _check,
+        "status": _status,
         "doctor": _doctor,
         "explain": _explain,
     }
@@ -73,22 +77,63 @@ def entrypoint() -> NoReturn:
 
 
 def _parser() -> argparse.ArgumentParser:
+    formatter = argparse.RawDescriptionHelpFormatter
+    launcher = lsh_stack_command()
     parser = argparse.ArgumentParser(
         prog="lsh-stack",
         description="Compose bridge, coordinator and Node-RED config from LSH TOML files.",
+        formatter_class=formatter,
+        epilog=f"""\
+Typical flow:
+  {launcher} new my-home
+  cd my-home
+  {launcher} setup
+  {launcher} doctor
+
+Need orientation:
+  {launcher} status
+
+After the first USB bridge flash and Homie setup:
+  {launcher} ota --dry-run
+  {launcher} ota panel
+""",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
 
-    new = subparsers.add_parser("new", help="create a starter installation project")
-    new.add_argument("path", type=Path)
+    new = subparsers.add_parser(
+        "new",
+        help="create a starter installation project",
+        description="Create a complete editable LSH stack project directory.",
+        formatter_class=formatter,
+        epilog=f"""\
+Example:
+  {launcher} new my-home
+  cd my-home
+  {launcher} setup
+""",
+    )
+    new.add_argument("path", metavar="PROJECT_DIR", type=Path, help="project directory to create")
     new.add_argument("--force", action="store_true", help="overwrite existing starter files")
 
     new_core = subparsers.add_parser(
         "new-core",
         help="create a standalone lsh-core PlatformIO project",
+        description="Create only the controller PlatformIO project, without bridge or stack files.",
+        formatter_class=formatter,
+        epilog=f"""\
+Example:
+  {launcher} new-core my-controller
+  cd my-controller
+  platformio run -e core_panel
+""",
     )
-    new_core.add_argument("path", type=Path)
+    new_core.add_argument(
+        "path",
+        metavar="PROJECT_DIR",
+        type=Path,
+        help="core project directory to create",
+    )
     new_core.add_argument(
         "--force",
         action="store_true",
@@ -98,13 +143,34 @@ def _parser() -> argparse.ArgumentParser:
     setup = subparsers.add_parser(
         "setup",
         help="bootstrap, generate and check an installation project",
+        description="Create missing project shells, generate outputs and print the next commands.",
+        formatter_class=formatter,
+        epilog=f"""\
+Run from the stack project directory:
+  {launcher} setup
+
+If PlatformIO CLI is not installed, build the core environment once from VSCode
+PlatformIO Project Tasks, then run the same setup command again.
+""",
     )
     _add_config_option(setup)
 
-    ota = subparsers.add_parser("ota", help="build and OTA-upload bridge firmware")
+    ota = subparsers.add_parser(
+        "ota",
+        help="build and OTA-upload bridge firmware",
+        description="Build the default bridge firmware profile and OTA-upload it.",
+        formatter_class=formatter,
+        epilog=f"""\
+Examples:
+  {launcher} ota --dry-run
+  {launcher} ota panel
+  {launcher} ota panel lights
+""",
+    )
     ota.add_argument(
         "device_args",
         nargs="*",
+        metavar="DEVICE",
         help="bridge device ids to update; omitted means all",
     )
     ota.add_argument(
@@ -112,7 +178,7 @@ def _parser() -> argparse.ArgumentParser:
         dest="config_path",
         type=Path,
         default=DEFAULT_CONFIG,
-        help="path to lsh_stack.toml",
+        help="path to lsh_stack.toml (default: lsh_stack.toml)",
     )
     ota.add_argument("--dry-run", action="store_true", help="print commands without running them")
     ota.add_argument("--list-devices", action="store_true", help="print bridge device ids and exit")
@@ -120,13 +186,18 @@ def _parser() -> argparse.ArgumentParser:
     command_help = {
         "generate": "generate stack artifacts",
         "check": "validate the stack configuration",
+        "status": "show setup progress and the next action",
         "doctor": "diagnose stack configuration problems",
     }
     for command, help_text in command_help.items():
-        child = subparsers.add_parser(command, help=help_text)
+        child = subparsers.add_parser(command, help=help_text, formatter_class=formatter)
         _add_config_option(child)
-    explain = subparsers.add_parser("explain", help="explain generated config for one device")
-    explain.add_argument("device", help="controller device name to explain")
+    explain = subparsers.add_parser(
+        "explain",
+        help="explain generated config for one device",
+        formatter_class=formatter,
+    )
+    explain.add_argument("device", metavar="DEVICE", help="controller device name to explain")
     _add_config_option(explain)
     return parser
 
@@ -136,7 +207,7 @@ def _add_config_option(parser: argparse.ArgumentParser) -> None:
         "--config",
         type=Path,
         default=DEFAULT_CONFIG,
-        help="path to lsh_stack.toml",
+        help="path to lsh_stack.toml (default: lsh_stack.toml)",
     )
 
 
@@ -172,7 +243,7 @@ def _setup(args: argparse.Namespace) -> int:
     sys.stdout.write("setup complete\n")
     sys.stdout.write("written files:\n")
     for path in written:
-        sys.stdout.write(f"- {path}\n")
+        sys.stdout.write(f"- {display_path(path)}\n")
 
     warnings = project_warnings(config, output_dir)
     if warnings:
@@ -183,7 +254,7 @@ def _setup(args: argparse.Namespace) -> int:
     if scaffolded:
         sys.stdout.write("created project files:\n")
         for path in scaffolded:
-            sys.stdout.write(f"- {path}\n")
+            sys.stdout.write(f"- {display_path(path)}\n")
 
     _print_setup_next_steps(config, stack, output_dir)
     return 0
@@ -268,13 +339,21 @@ def _generate(args: argparse.Namespace) -> int:
     sys.stdout.write(render_report(config, stack))
     sys.stdout.write("written files:\n")
     for path in written:
-        sys.stdout.write(f"- {path}\n")
+        sys.stdout.write(f"- {display_path(path)}\n")
     return 0
 
 
 def _check(args: argparse.Namespace) -> int:
     config, stack = _compose(args.config)
     sys.stdout.write(render_report(config, stack))
+    return 0
+
+
+def _status(args: argparse.Namespace) -> int:
+    config_path = args.config.resolve()
+    config = load_stack_config(config_path)
+    status = inspect_stack_status(config, _output_dir(config_path))
+    sys.stdout.write(render_stack_status(status))
     return 0
 
 
@@ -318,7 +397,7 @@ def _explain(args: argparse.Namespace) -> int:
     bridge_env = bridge_build_env(config, default_profile)
 
     sys.stdout.write(f"LSH stack explain: {args.device}\n")
-    sys.stdout.write(f"- controller TOML: {config.core.devices}\n")
+    sys.stdout.write(f"- controller TOML: {display_path(config.core.devices)}\n")
     sys.stdout.write(f"- controller environment: {core_env}\n")
     if bridge_entry is not None:
         topics = json_object(bridge_entry.get("topics", {}))
@@ -369,7 +448,9 @@ def _should_bootstrap_core_project(config: StackConfig) -> bool:
 
 def _validate_stack_ota_support(config: StackConfig) -> None:
     if config.deploy.bridge.ota is None:
-        raise StackConfigError("configure [deploy.bridge.ota] before using lsh-stack ota.")
+        raise StackConfigError(
+            f"configure [deploy.bridge.ota] before using {lsh_stack_command()} ota."
+        )
 
 
 def _selected_bridge_devices(
@@ -395,7 +476,9 @@ def _selected_bridge_devices(
 
 def _bridge_project(config: StackConfig) -> Path:
     if config.platformio.bridge_project is None:
-        raise StackConfigError("platformio.bridge_project is required for lsh-stack ota.")
+        raise StackConfigError(
+            f"platformio.bridge_project is required for {lsh_stack_command()} ota."
+        )
     return config.platformio.bridge_project
 
 
@@ -423,31 +506,24 @@ def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: 
     bridge_env = bridge_build_env(config, default_bridge_profile(bridge_profiles(config)))
 
     sys.stdout.write("next steps:\n")
-    sys.stdout.write(f"- core build: platformio run -d {core_project} -e {core_env}\n")
-    sys.stdout.write(f"- bridge build: platformio run -d {bridge_project} -e {bridge_env}\n")
+    sys.stdout.write(
+        f"- core build: platformio run -d {display_path(core_project)} -e {core_env}\n"
+    )
+    sys.stdout.write(
+        f"- bridge build: platformio run -d {display_path(bridge_project)} -e {bridge_env}\n"
+    )
     if config.deploy.bridge.ota is not None:
         sys.stdout.write(f"- bridge OTA one: {_stack_ota_cli_command(config, first_device)}\n")
         sys.stdout.write(f"- bridge OTA all: {_stack_ota_cli_command(config)}\n")
-    sys.stdout.write(f"- detailed guide: {output_dir / 'README.generated.md'}\n")
+    sys.stdout.write(f"- detailed guide: {display_path(output_dir / 'README.generated.md')}\n")
     sys.stdout.write(
         "- VSCode users can run the same environments from PlatformIO Project Tasks.\n"
     )
 
 
 def _stack_ota_cli_command(config: StackConfig, device: str | None = None) -> str:
-    parts = [lsh_stack_command(), "ota"]
-    if config.path.name != "lsh_stack.toml":
-        parts.extend(["--config", _display_config_path(config.path)])
-    if device is not None:
-        parts.append(device)
-    return " ".join(parts)
-
-
-def _display_config_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path)
+    args = () if device is None else (device,)
+    return stack_command("ota", config, *args)
 
 
 def _bridge_entry(stack: JsonObject, device: str) -> tuple[str | None, JsonObject | None]:

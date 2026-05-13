@@ -98,10 +98,9 @@ default_method = "usb"
 # append = ["-Wall"]
 
 # [[network_clicks]]
-# source = "panel.logic_button"
+# source = "panel.wall_button"
 # type = "long"
-# actors = [{ device = "lights", actuators = "all" }]
-# other_actors = ["zigbee_table_lamp"]
+# actors = [{ device = "panel", actuators = ["light"] }]
 """
 
 DEVICES_TEMPLATE = """#:schema https://raw.githubusercontent.com/labodj/lsh-core/main/docs/lsh_devices.schema.json
@@ -129,6 +128,8 @@ pin = "R0"
 id = 1
 pin = "A0"
 short = "light"
+# Uncomment together with [[network_clicks]] in ../lsh_stack.toml.
+# long = { network = true, fallback = "do_nothing" }
 """
 
 CORE_PLATFORMIO_TEMPLATE = f"""[lsh_stack_template]
@@ -443,8 +444,8 @@ for script in _candidate_scripts():
 else:
     raise RuntimeError(
         \"lsh-core is not installed yet. Build this core project once with PlatformIO \"
-        \"IDE or run `platformio run -e core_panel` from core/, then run lsh-stack \"
-        \"generate from the installation folder.\"
+        \"IDE or run `platformio run -e core_panel` from core/, then run the \"
+        \"stack setup/generate command shown in the installation README.\"
     )
 """
 
@@ -554,7 +555,20 @@ and, when the PlatformIO CLI is available, builds the starter core project once 
 If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
 extension and run `core_panel` -> Build once, then run the same setup command again.
 
-When you intentionally want separated steps:
+When you are unsure what is already done, ask for the next action:
+
+```bash
+{lsh_stack_command} status
+```
+
+Use the doctor whenever an edit or generated file feels inconsistent:
+
+```bash
+{lsh_stack_command} doctor
+```
+
+When you intentionally want separated steps after setup has succeeded or after
+the core project has been built once:
 
 ```bash
 {lsh_stack_command} generate
@@ -597,7 +611,7 @@ If PlatformIO is only available inside VSCode, open this folder with the Platfor
 extension and run `core_panel` -> Build from Project Tasks.
 
 This project is standalone. If you later adopt the full stack, create a stack project
-with `lsh-stack new` and point `[core].devices` at this `lsh_devices.toml`.
+with `{lsh_stack_command} new` and point `[core].devices` at this `lsh_devices.toml`.
 """
 
 OVERRIDES_README = """# Persistent Overrides

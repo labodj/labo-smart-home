@@ -117,6 +117,7 @@ jobs:
             exit 1
           fi
           python dist/lsh-stack.pyz check --config "$tmpdir/installation/lsh_stack.toml"
+          python dist/lsh-stack.pyz status --config "$tmpdir/installation/lsh_stack.toml"
           python dist/lsh-stack.pyz setup --config "$tmpdir/installation/lsh_stack.toml"
           python dist/lsh-stack.pyz new-core "$tmpdir/core-only"
           test -s "$tmpdir/core-only/lsh_devices.toml"
@@ -202,6 +203,7 @@ jobs:
             exit 1
           fi
           python dist/lsh-stack.pyz check --config "$tmpdir/installation/lsh_stack.toml"
+          python dist/lsh-stack.pyz status --config "$tmpdir/installation/lsh_stack.toml"
           python dist/lsh-stack.pyz setup --config "$tmpdir/installation/lsh_stack.toml"
           python dist/lsh-stack.pyz new-core "$tmpdir/core-only"
           test -s "$tmpdir/core-only/lsh_devices.toml"

@@ -44,8 +44,45 @@ def test_lsh_stack_new_uses_zipapp_launcher_command(
     readme = (project / "README.md").read_text(encoding="utf-8")
     stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
     assert f"/usr/bin/python3 {archive} setup" in readme
+    assert f"/usr/bin/python3 {archive} status" in readme
+    assert f"/usr/bin/python3 {archive} doctor" in readme
     assert "[bridge.defaults.build_flags]" in stack_toml
     assert '# append = ["-Wall"]' in stack_toml
+
+
+def test_cli_help_shows_first_run_examples(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The top-level help should teach the shortest successful path."""
+    monkeypatch.setattr(cli, "lsh_stack_command", lambda: "python ./lsh-stack.pyz")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "Typical flow:" in output
+    assert "python ./lsh-stack.pyz new my-home" in output
+    assert "python ./lsh-stack.pyz setup" in output
+    assert "python ./lsh-stack.pyz status" in output
+    assert "python ./lsh-stack.pyz ota --dry-run" in output
+
+
+def test_cli_subcommand_help_uses_current_launcher(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Subcommand examples should not assume the console script exists."""
+    monkeypatch.setattr(cli, "lsh_stack_command", lambda: "/usr/bin/python3 ./lsh-stack.pyz")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["ota", "--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "/usr/bin/python3 ./lsh-stack.pyz ota --dry-run" in output
+    assert "/usr/bin/python3 ./lsh-stack.pyz ota panel" in output
 
 
 def test_lsh_stack_entrypoint_preserves_error_exit_code(
@@ -215,6 +252,7 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
     assert "bridge-platformio-flags/bridge.txt" in generated_readme
     assert "platformio-bridge-targets.py" in generated_readme
     assert "bridge_usb_panel" in generated_readme
+    assert "Upload.\n\nIf newly generated custom targets" in generated_readme
     assert "--protocol msgpack" in generated_readme
     assert "--config" in generated_readme
     assert "Developer: Reload Window" in generated_readme
@@ -374,6 +412,11 @@ def test_stack_config_generated_readme_hides_ota_when_no_ota_template(
     generated_readme = (output_dir / "README.generated.md").read_text(encoding="utf-8")
 
     assert "OTA custom targets are not generated until" in generated_readme
+    assert "## Regenerate" in generated_readme
+    assert "Commands below are intended to be run from the stack project root." in generated_readme
+    assert "lsh-stack.py generate" in generated_readme
+    assert "lsh-stack.py doctor" in generated_readme
+    assert "lsh-stack.py status" in generated_readme
     assert "LSH OTA <device>" not in generated_readme
     assert "bridge-platformio-flags/bridge.txt" in generated_readme
     assert "platformio-bridge-targets.py" not in generated_readme
@@ -382,6 +425,10 @@ def test_stack_config_generated_readme_hides_ota_when_no_ota_template(
     assert "bridge/platformio.ini" in generated_readme
     assert "bridge_batch" not in generated_readme
     assert "root `platformio.ini`" not in generated_readme
+    assert f"platformio run -d {tmp_path}" not in generated_readme
+    assert "platformio run -d core -e core_panel" in generated_readme
+    assert "platformio run -d bridge -e bridge" in generated_readme
+    assert "--config generated/system-config.json" in generated_readme
     assert not (output_dir / "platformio-bridge-targets.py").exists()
     assert not (output_dir / "platformio-bridge-batch.py").exists()
 
@@ -733,10 +780,18 @@ def test_lsh_stack_new_creates_personal_project_shape(tmp_path: Path) -> None:
     assert 'expose_config_context = "global"' in stack_toml
     assert 'name = "littlefs_debug"' in stack_toml
     assert 'name = "littlefs_migration_debug"' in stack_toml
+    assert '# source = "panel.wall_button"' in stack_toml
+    assert '# actors = [{ device = "panel", actuators = ["light"] }]' in stack_toml
+    assert "logic_button" not in stack_toml
 
     readme = (project / "README.md").read_text(encoding="utf-8")
     assert "lsh-stack.py generate" in readme
+    assert "lsh-stack.py status" in readme
+    assert "Use the doctor" in readme
+    assert "after setup has succeeded" in readme
     assert "uv run" not in readme
+    devices_toml = (project / "core" / "lsh_devices.toml").read_text(encoding="utf-8")
+    assert '# long = { network = true, fallback = "do_nothing" }' in devices_toml
 
 
 def test_lsh_stack_new_reports_existing_files_on_separate_lines(
@@ -778,6 +833,7 @@ def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> N
     readme = (project / "README.md").read_text(encoding="utf-8")
     assert "platformio run -e core_panel" in readme
     assert "lsh-stack setup" not in readme
+    assert "point `[core].devices`" in readme
 
 
 @pytest.mark.parametrize("command", ["new", "new-core"])
@@ -844,7 +900,170 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
     assert "lsh-core bootstrap build succeeded." in output
     assert "setup complete" in output
     assert "next steps:" in output
-    assert f"bridge build: platformio run -d {project / 'bridge'} -e bridge_littlefs" in output
+    assert "bridge build: platformio run -d bridge -e bridge_littlefs" in output
+
+
+def test_lsh_stack_status_guides_fresh_project_without_core_generator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Status should work before lsh-core can be executed."""
+    project = tmp_path / "fresh-installation"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: None)
+    monkeypatch.chdir(project)
+
+    assert cli.main(["status"]) == 0
+
+    output = capsys.readouterr().out
+    assert "LSH stack status" in output
+    assert "core config: core/lsh_devices.toml (present)" in output
+    assert "PlatformIO CLI: not available in this shell" in output
+    assert "lsh-core generator: not installed yet" in output
+    assert "generated files: incomplete" in output
+    assert "next action:" in output
+    assert " setup" in output
+    assert "LSH stack composer" not in output
+
+
+def test_lsh_stack_status_reports_ready_project_next_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Status should stay concise after generated files and the core tool exist."""
+    project = tmp_path / "ready-installation"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+
+    core_tool = project / "core" / ".pio" / "libdeps" / "core_panel" / "lsh-core" / "tools"
+    core_tool.mkdir(parents=True)
+    (core_tool / "generate_lsh_static_config.py").write_text("", encoding="utf-8")
+    (project / "generated" / "bridge-platformio-flags").mkdir(exist_ok=True)
+    for name in (
+        "lsh-stack-config.json",
+        "system-config.json",
+        "node-red-lsh-logic.json",
+        "node-red-setup.md",
+        "bridge-platformio-flags/bridge.txt",
+        "deploy-plan.json",
+        "README.generated.md",
+    ):
+        (project / "generated" / name).write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: ["platformio"])
+    monkeypatch.chdir(project)
+
+    assert cli.main(["status"]) == 0
+
+    output = capsys.readouterr().out
+    assert "lsh-core generator: installed at core/.pio/libdeps" in output
+    assert "generated files: key files present" in output
+    assert "OTA: not configured" in output
+    assert "next action:" in output
+    assert "build firmware" in output
+
+
+def test_lsh_stack_status_prefers_guided_setup_when_generated_files_are_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Even with a core tool available, missing generated files should point to setup."""
+    project = tmp_path / "half-ready-installation"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+
+    core_tool = project / "tools" / "generate_lsh_static_config.py"
+    core_tool.parent.mkdir()
+    core_tool.write_text("", encoding="utf-8")
+    config_path = project / "lsh_stack.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            '# tool = "../lsh-core/tools/generate_lsh_static_config.py"',
+            f'tool = "{core_tool}"',
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(project)
+
+    assert cli.main(["status"]) == 0
+
+    output = capsys.readouterr().out
+    assert "lsh-core generator: configured:" in output
+    assert "generated files: incomplete" in output
+    assert "next action:" in output
+    next_action = output.split("next action:\n", maxsplit=1)[1]
+    assert " setup" in next_action
+    assert " generate" not in next_action
+
+
+def test_lsh_stack_setup_without_platformio_prints_actionable_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A missing PlatformIO CLI should explain both CLI and VSCode recovery paths."""
+    archive = tmp_path / "lsh-stack.pyz"
+    archive.write_bytes(b"zipapp")
+    project = tmp_path / "fresh-installation"
+    monkeypatch.setattr(sys, "argv", [str(archive), "setup"])
+    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: None)
+
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+    monkeypatch.chdir(project)
+
+    assert cli.main(["setup"]) == 1
+
+    error = capsys.readouterr().err
+    expected_command = f"/usr/bin/python3 {archive.resolve()} setup"
+    assert "PlatformIO CLI is not available" in error
+    assert f"Install the PlatformIO CLI, then run: {expected_command}" in error
+    assert "in VSCode with the PlatformIO extension" in error
+    assert "first core build downloads lsh-core" in error
+
+
+def test_lsh_stack_setup_bootstrap_failure_ends_with_recovery_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PlatformIO failures should end with a clear next action, not only raw logs."""
+    project = tmp_path / "fresh-installation"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+
+    def fake_run(
+        command: list[str],
+        *,
+        check: bool = False,
+        capture_output: bool = False,
+        text: bool = False,
+    ) -> SimpleNamespace:
+        assert command == ["platformio", "run", "-d", str(project / "core"), "-e", "core_panel"]
+        assert not check
+        assert capture_output
+        assert text
+        return SimpleNamespace(returncode=1, stdout="platformio stdout\n", stderr="tool failed\n")
+
+    monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: ["platformio"])
+    monkeypatch.setattr("lsh_stack_config.cli_runtime.subprocess.run", fake_run)
+    monkeypatch.chdir(project)
+
+    assert cli.main(["setup"]) == 1
+
+    captured = capsys.readouterr()
+    assert "platformio stdout" in captured.err
+    assert "tool failed" in captured.err
+    assert "lsh-core bootstrap build failed" in captured.err
+    assert "rerun: python" in captured.err
+    assert "setup" in captured.err
 
 
 def test_lsh_stack_setup_materializes_missing_personal_projects(
@@ -1058,6 +1277,7 @@ def test_lsh_stack_ota_dry_run_does_not_require_platformio(
     output = capsys.readouterr().out
     assert "running: platformio run" in output
     assert "bridge-ota.py" in output
+    assert str(tmp_path) not in output
 
 
 def test_lsh_stack_new_supports_documented_first_use_without_sibling_repos(
@@ -1136,6 +1356,7 @@ def test_lsh_stack_explain_reports_one_device(
     assert cli.main(["explain", "panel"]) == 0
 
     output = capsys.readouterr().out
+    assert "controller TOML: lsh_devices.toml" in output
     assert "controller environment: core_panel" in output
     assert "bridge firmware environment: bridge" in output
     assert "bridge OTA target: not configured" in output
@@ -1213,6 +1434,31 @@ def test_lsh_stack_doctor_warns_when_platformio_does_not_include_generated_fragm
     output = capsys.readouterr().out
     assert "warnings:" in output
     assert "core platformio.ini should include `../generated/platformio-core.ini`" in output
+
+
+def test_lsh_stack_doctor_uses_project_relative_missing_file_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Doctor output should stay readable from the project root."""
+    project = tmp_path / "install"
+    assert cli.main(["new", str(project)]) == 0
+    capsys.readouterr()
+    (project / "generated" / "platformio-core.ini").unlink()
+    (project / "generated" / "platformio-bridge.ini").unlink()
+
+    config = load_stack_config(project / "lsh_stack.toml")
+    stack = compose_stack(config, _starter_core_export())
+    monkeypatch.setattr(cli, "_compose", lambda _path: (config, stack))
+    monkeypatch.chdir(project)
+
+    assert cli.main(["doctor"]) == 0
+
+    output = capsys.readouterr().out
+    assert "missing generated/platformio-core.ini" in output
+    assert "missing generated/platformio-bridge.ini" in output
+    assert str(tmp_path) not in output
 
 
 def test_stack_config_rejects_clicks_not_declared_as_network_clicks(tmp_path: Path) -> None:

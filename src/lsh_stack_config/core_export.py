@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from .errors import StackConfigError
+from .launcher import lsh_stack_command
 from .models import CoreSettings, JsonObject
 
 _TOOL_RELATIVE_PATH = Path("tools/generate_lsh_static_config.py")
@@ -71,8 +72,9 @@ def _resolve_core_tool(core: CoreSettings, *, override_tool: Path | None) -> Pat
             return candidate.resolve()
 
     raise StackConfigError(
-        "cannot find lsh-core generator. Build the core PlatformIO project once from "
-        "the IDE or CLI so dependencies are installed, set core.tool in lsh_stack.toml "
+        "cannot find lsh-core generator. Run "
+        f"`{lsh_stack_command()} setup` from the stack project, build the core "
+        "PlatformIO project once from VSCode/CLI, set [core].tool in lsh_stack.toml, "
         "or set LSH_CORE_TOOL."
     )
 
