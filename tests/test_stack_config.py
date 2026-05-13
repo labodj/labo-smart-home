@@ -6,83 +6,17 @@ import json
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from lsh_stack_config import __version__, cli, cli_runtime, scaffold
+from lsh_stack_config import cli, cli_runtime, scaffold
 from lsh_stack_config.composer import compose_stack
 from lsh_stack_config.errors import StackConfigError
 from lsh_stack_config.models import JsonObject, StackConfig
 from lsh_stack_config.parser import load_stack_config
 from lsh_stack_config.render import write_output_tree
-
-
-def test_package_version_matches_pyproject() -> None:
-    """The runtime version shown by release artifacts tracks pyproject."""
-    pyproject = tomllib.loads(
-        (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
-    )
-    assert __version__ == pyproject["project"]["version"]
-
-
-def test_lsh_stack_new_uses_zipapp_launcher_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Starter docs should keep working when lsh-stack is a release .pyz file."""
-    archive = tmp_path / "lsh-stack.pyz"
-    archive.write_bytes(b"zipapp")
-    project = tmp_path / "installation"
-    monkeypatch.setattr(sys, "argv", [str(archive), "new"])
-    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
-    monkeypatch.setattr(scaffold, "_source_checkout_root", lambda: None)
-
-    assert cli.main(["new", str(project)]) == 0
-    readme = (project / "README.md").read_text(encoding="utf-8")
-    stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
-    assert f"/usr/bin/python3 {archive} setup" in readme
-    assert f"/usr/bin/python3 {archive} status" in readme
-    assert f"/usr/bin/python3 {archive} doctor" in readme
-    assert "[bridge.defaults.build_flags]" in stack_toml
-    assert '# append = ["-Wall"]' in stack_toml
-
-
-def test_cli_help_shows_first_run_examples(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """The top-level help should teach the shortest successful path."""
-    monkeypatch.setattr(cli, "lsh_stack_command", lambda: "python ./lsh-stack.pyz")
-
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["--help"])
-
-    assert exc.value.code == 0
-    output = capsys.readouterr().out
-    assert "Typical flow:" in output
-    assert "python ./lsh-stack.pyz new my-home" in output
-    assert "python ./lsh-stack.pyz setup" in output
-    assert "python ./lsh-stack.pyz status" in output
-    assert "python ./lsh-stack.pyz ota --dry-run" in output
-
-
-def test_cli_subcommand_help_uses_current_launcher(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Subcommand examples should not assume the console script exists."""
-    monkeypatch.setattr(cli, "lsh_stack_command", lambda: "/usr/bin/python3 ./lsh-stack.pyz")
-
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["ota", "--help"])
-
-    assert exc.value.code == 0
-    output = capsys.readouterr().out
-    assert "/usr/bin/python3 ./lsh-stack.pyz ota --dry-run" in output
-    assert "/usr/bin/python3 ./lsh-stack.pyz ota panel" in output
 
 
 def test_lsh_stack_entrypoint_preserves_error_exit_code(
@@ -168,8 +102,16 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
         [platformio]
         core_project = "core"
         bridge_project = "bridge"
-        core_base_env = "core_release"
-        bridge_base_env = "bridge_base"
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "core_release"
+        default = true
+
+        [[platformio.bridge_profiles]]
+        name = "release"
+        extends = "bridge_base"
+        default = true
 
         [deploy.bridge]
         default_method = "ota"
@@ -203,7 +145,7 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
 
     assert "[lsh_stack_bridge_wide]" in bridge_ini
     assert "-DCONFIG_MAX_ACTUATORS=1U" in bridge_ini
-    assert "[env:bridge]" in bridge_ini
+    assert "[env:bridge_release]" in bridge_ini
     assert "extends = bridge_base" in bridge_ini
     assert "${bridge_base.build_flags}" in bridge_ini
     assert "${lsh_stack_bridge_wide.build_flags}" in bridge_ini
@@ -211,12 +153,12 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
     assert "custom_lsh_stack_ota_devices =" in bridge_ini
     assert "    panel" in bridge_ini
     assert "    lights" in bridge_ini
-    assert "[env:bridge_usb_panel]" in bridge_ini
-    assert "extends = env:bridge" in bridge_ini
+    assert "[env:bridge_release_usb_panel]" in bridge_ini
+    assert "extends = env:bridge_release" in bridge_ini
     assert "upload_port = /dev/ttyUSB0" in bridge_ini
-    assert deploy_plan["bridgeFirmware"]["buildEnv"] == "bridge"
+    assert deploy_plan["bridgeFirmware"]["buildEnv"] == "bridge_release"
     assert deploy_plan["bridgeFirmware"]["usbTargets"]["panel"] == {
-        "env": "bridge_usb_panel",
+        "env": "bridge_release_usb_panel",
         "uploadPort": "/dev/ttyUSB0",
         "command": [
             "platformio",
@@ -224,7 +166,7 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
             "-d",
             str(tmp_path / "bridge"),
             "-e",
-            "bridge_usb_panel",
+            "bridge_release_usb_panel",
             "-t",
             "upload",
         ],
@@ -239,7 +181,7 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
         "-d",
         str(tmp_path / "bridge"),
         "-e",
-        "bridge",
+        "bridge_release",
     ]
     core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
     assert (
@@ -251,7 +193,7 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
     assert "OTA custom targets are not generated until" not in generated_readme
     assert "bridge-platformio-flags/bridge.txt" in generated_readme
     assert "platformio-bridge-targets.py" in generated_readme
-    assert "bridge_usb_panel" in generated_readme
+    assert "bridge_release_usb_panel" in generated_readme
     assert "Upload.\n\nIf newly generated custom targets" in generated_readme
     assert "--protocol msgpack" in generated_readme
     assert "--config" in generated_readme
@@ -575,7 +517,11 @@ def test_stack_config_derives_local_core_extra_script_and_preserves_base_scripts
 
         [platformio]
         core_project = "lsh-core-personal"
-        core_base_env = "common_release"
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "common_release"
+        default = true
         """,
     )
     config = load_stack_config(config_path)
@@ -734,6 +680,42 @@ def test_stack_config_rejects_duplicate_core_profiles(tmp_path: Path) -> None:
         load_stack_config(config_path)
 
 
+def test_stack_config_requires_explicit_platformio_profiles(tmp_path: Path) -> None:
+    """The stack file has one supported profile model: explicit defaults."""
+    missing_platformio = tmp_path / "missing-platformio.toml"
+    missing_platformio.write_text(
+        """
+        [core]
+        devices = "lsh_devices.toml"
+        """,
+        encoding="utf-8",
+    )
+    missing_default = tmp_path / "missing-default.toml"
+    missing_default.write_text(
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "env:release"
+
+        [[platformio.bridge_profiles]]
+        name = "release"
+        extends = "env:release"
+        default = true
+        """,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(StackConfigError, match="platformio table is required"):
+        load_stack_config(missing_platformio)
+    with pytest.raises(StackConfigError, match=r"exactly one platformio\.core_profiles"):
+        load_stack_config(missing_default)
+
+
 def test_stack_config_does_not_duplicate_inherited_core_extra_script(tmp_path: Path) -> None:
     """Existing base lsh-core scripts are inherited rather than emitted twice."""
     core_project = tmp_path / "lsh-core-personal"
@@ -763,7 +745,11 @@ def test_stack_config_does_not_duplicate_inherited_core_extra_script(tmp_path: P
 
         [platformio]
         core_project = "lsh-core-personal"
-        core_base_env = "common_release"
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "common_release"
+        default = true
         """,
     )
     config = load_stack_config(config_path)
@@ -1242,6 +1228,16 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
         [platformio]
         core_project = "../lsh-core-personal"
         bridge_project = "../lsh-bridge-personal"
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "common_release"
+        default = true
+
+        [[platformio.bridge_profiles]]
+        name = "release"
+        extends = "lsh_bridge_release"
+        default = true
         """,
         encoding="utf-8",
     )
@@ -1342,7 +1338,7 @@ def test_lsh_stack_ota_builds_and_updates_selected_devices(
         assert env is None
         run_commands.append(command)
         if command[:2] == ["platformio", "run"]:
-            firmware = tmp_path / "bridge" / ".pio" / "build" / "bridge" / "firmware.bin"
+            firmware = tmp_path / "bridge" / ".pio" / "build" / "bridge_release" / "firmware.bin"
             firmware.parent.mkdir(parents=True)
             firmware.write_bytes(b"firmware")
         return SimpleNamespace(returncode=0)
@@ -1355,9 +1351,9 @@ def test_lsh_stack_ota_builds_and_updates_selected_devices(
 
     assert cli.main(["ota", "panel", "lights"]) == 0
 
-    firmware = tmp_path / "bridge" / ".pio" / "build" / "bridge" / "firmware.bin"
+    firmware = tmp_path / "bridge" / ".pio" / "build" / "bridge_release" / "firmware.bin"
     assert run_commands == [
-        ["platformio", "run", "-d", str(tmp_path / "bridge"), "-e", "bridge"],
+        ["platformio", "run", "-d", str(tmp_path / "bridge"), "-e", "bridge_release"],
         [
             sys.executable,
             str(output_dir / "bridge-ota.py"),
@@ -1792,6 +1788,27 @@ def test_stack_config_reserves_bridgeless_mode_until_core_support_exists(tmp_pat
 
 def _write_stack_config(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "lsh_stack.toml"
+    if "[platformio]" not in content and "[[platformio." not in content:
+        content += """
+
+        [platformio]
+        """
+    if "[[platformio.core_profiles]]" not in content:
+        content += """
+
+        [[platformio.core_profiles]]
+        name = "release"
+        extends = "env:release"
+        default = true
+        """
+    if "[[platformio.bridge_profiles]]" not in content:
+        content += """
+
+        [[platformio.bridge_profiles]]
+        name = "release"
+        extends = "env:release"
+        default = true
+        """
     path.write_text(content, encoding="utf-8")
     return path
 

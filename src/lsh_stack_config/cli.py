@@ -18,6 +18,7 @@ from .cli_runtime import (
 from .commands import stack_command
 from .composer import compose_stack
 from .core_export import installed_lsh_core_tools, load_core_export
+from .deploy import stack_build_plan
 from .doctor import doctor_fix, project_warnings
 from .errors import StackConfigError
 from .launcher import lsh_stack_command
@@ -26,14 +27,8 @@ from .parser import load_stack_config
 from .paths import absolute_path, display_path
 from .render import render_report, stack_json, write_output_tree
 from .render_common import (
-    bridge_build_env,
     bridge_devices,
-    bridge_profiles,
     core_build_env,
-    core_profiles,
-    default_bridge_profile,
-    default_core_profile,
-    device_names,
     json_list,
     json_object,
 )
@@ -276,6 +271,7 @@ def _ota(args: argparse.Namespace) -> int:
     config_path = absolute_path(args.config_path)
     output_dir = _output_dir(config_path)
     config, stack = _compose(config_path)
+    plan = stack_build_plan(config, stack)
     available_devices = list(bridge_devices(stack))
     if args.list_devices:
         sys.stdout.write("\n".join(available_devices) + ("\n" if available_devices else ""))
@@ -283,13 +279,13 @@ def _ota(args: argparse.Namespace) -> int:
 
     _validate_stack_ota_support(config)
     selected_devices = _selected_bridge_devices(available_devices, list(args.device_args))
-    profile = default_bridge_profile(bridge_profiles(config))
+    profile = plan.default_bridge_profile
     if not profile.ota:
         raise StackConfigError("the default bridge profile has ota = false.")
 
     write_output_tree(output_dir, config, stack)
     bridge_project = _bridge_project(config)
-    build_env = bridge_build_env(config, profile)
+    build_env = plan.default_bridge_env
     firmware = bridge_project / ".pio" / "build" / build_env / "firmware.bin"
     ota_script = output_dir / "bridge-ota.py"
     ota_config = output_dir / "bridge-ota.json"
@@ -345,7 +341,7 @@ def _bridge_ota_command_args(
 
 
 def _generate(args: argparse.Namespace) -> int:
-    config_path = args.config.resolve()
+    config_path = absolute_path(args.config)
     config, stack = _compose(config_path)
     written = write_output_tree(_output_dir(config_path), config, stack)
     sys.stdout.write(render_report(config, stack))
@@ -356,7 +352,8 @@ def _generate(args: argparse.Namespace) -> int:
 
 
 def _check(args: argparse.Namespace) -> int:
-    config, stack = _compose(args.config)
+    config_path = absolute_path(args.config)
+    config, stack = _compose(config_path)
     sys.stdout.write(render_report(config, stack))
     return 0
 
@@ -370,15 +367,16 @@ def _status(args: argparse.Namespace) -> int:
 
 
 def _doctor(args: argparse.Namespace) -> int:
+    config_path = absolute_path(args.config)
     sys.stdout.write("LSH stack doctor\n")
     try:
-        config, _stack = _compose(args.config)
+        config, _stack = _compose(config_path)
     except StackConfigError as exc:
         sys.stdout.write(f"problem: {exc}\n")
         sys.stdout.write(f"fix: {doctor_fix(str(exc))}\n")
         return 1
 
-    warnings = project_warnings(config, _output_dir(args.config))
+    warnings = project_warnings(config, _output_dir(config_path))
     if warnings:
         sys.stdout.write("warnings:\n")
         for warning in warnings:
@@ -391,7 +389,8 @@ def _doctor(args: argparse.Namespace) -> int:
 
 
 def _explain(args: argparse.Namespace) -> int:
-    config, stack = _compose(args.config)
+    config_path = absolute_path(args.config)
+    config, stack = _compose(config_path)
     system_config = json_object(json_object(stack["coordinator"])["systemConfig"])
     system_devices = json_list(system_config["devices"], "coordinator.systemConfig.devices")
     system_entry = next(
@@ -406,13 +405,10 @@ def _explain(args: argparse.Namespace) -> int:
     if system_entry is None and bridge_entry is None:
         raise StackConfigError(f"unknown device: {args.device}")
 
-    core_env = core_build_env(
-        config,
-        args.device,
-        default_core_profile(core_profiles(config)),
-    )
-    default_profile = default_bridge_profile(bridge_profiles(config))
-    bridge_env = bridge_build_env(config, default_profile)
+    plan = stack_build_plan(config, stack)
+    core_env = core_build_env(config, args.device, plan.default_core_profile)
+    default_profile = plan.default_bridge_profile
+    bridge_env = plan.default_bridge_env
 
     sys.stdout.write(f"LSH stack explain: {args.device}\n")
     sys.stdout.write(f"- controller TOML: {display_path(config.core.devices)}\n")
@@ -516,23 +512,18 @@ def _output_dir(config_path: Path) -> Path:
 
 
 def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: Path) -> None:
-    devices = device_names(stack)
-    first_device = devices[0] if devices else "device"
+    plan = stack_build_plan(config, stack)
+    first_device = plan.core_devices[0] if plan.core_devices else "device"
     core_project = config.platformio.core_project or config.core.devices.parent
     bridge_project = config.platformio.bridge_project or config.path.parent
-    core_env = core_build_env(
-        config,
-        first_device,
-        default_core_profile(core_profiles(config)),
-    )
-    bridge_env = bridge_build_env(config, default_bridge_profile(bridge_profiles(config)))
 
     sys.stdout.write("next steps:\n")
     sys.stdout.write(
-        f"- core build: platformio run -d {display_path(core_project)} -e {core_env}\n"
+        f"- core build: platformio run -d {display_path(core_project)} -e {plan.default_core_env}\n"
     )
     sys.stdout.write(
-        f"- bridge build: platformio run -d {display_path(bridge_project)} -e {bridge_env}\n"
+        "- bridge build: "
+        f"platformio run -d {display_path(bridge_project)} -e {plan.default_bridge_env}\n"
     )
     if config.deploy.bridge.ota is not None:
         sys.stdout.write(f"- bridge OTA one: {_stack_ota_cli_command(config, first_device)}\n")

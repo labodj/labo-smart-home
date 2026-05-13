@@ -37,10 +37,13 @@ other_actors_context = "global"
 [platformio]
 core_project = "../core"
 bridge_project = "../bridge"
-core_base_env = "env:release"
-bridge_base_env = "env:release"
 core_env_prefix = "core"
 bridge_env_prefix = "bridge"
+
+[[platformio.core_profiles]]
+name = "release"
+extends = "env:release"
+default = true
 
 [[platformio.bridge_profiles]]
 name = "release"

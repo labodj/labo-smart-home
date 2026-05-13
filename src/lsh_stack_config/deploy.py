@@ -10,6 +10,7 @@ from .errors import StackConfigError
 from .models import (
     BridgeDeployTarget,
     BridgeProfileSettings,
+    CoreProfileSettings,
     JsonObject,
     StackConfig,
 )
@@ -37,24 +38,70 @@ class BridgeOtaArtifacts:
     config: Path | None = None
 
 
+@dataclass(frozen=True)
+class StackBuildPlan:
+    """Common build/deploy naming derived once from config plus stack export."""
+
+    core_devices: tuple[str, ...]
+    bridge_devices: tuple[str, ...]
+    core_profiles: tuple[CoreProfileSettings, ...]
+    bridge_profiles: tuple[BridgeProfileSettings, ...]
+    default_core_profile: CoreProfileSettings
+    default_bridge_profile: BridgeProfileSettings
+    default_core_env: str
+    default_bridge_env: str
+    all_core_envs: tuple[str, ...]
+    all_bridge_envs: tuple[str, ...]
+    usb_devices: tuple[str, ...]
+
+
+def stack_build_plan(config: StackConfig, stack: JsonObject) -> StackBuildPlan:
+    """Return shared PlatformIO profile and environment names for a stack."""
+    core_device_names = tuple(device_names(stack))
+    bridge_device_names = tuple(bridge_devices(stack))
+    controller_profiles = core_profiles(config)
+    firmware_profiles = bridge_profiles(config)
+    default_controller_profile = default_core_profile(controller_profiles)
+    default_firmware_profile = default_bridge_profile(firmware_profiles)
+    return StackBuildPlan(
+        core_devices=core_device_names,
+        bridge_devices=bridge_device_names,
+        core_profiles=controller_profiles,
+        bridge_profiles=firmware_profiles,
+        default_core_profile=default_controller_profile,
+        default_bridge_profile=default_firmware_profile,
+        default_core_env=core_build_env(
+            config,
+            core_device_names[0] if core_device_names else "device",
+            default_controller_profile,
+        ),
+        default_bridge_env=bridge_build_env(config, default_firmware_profile),
+        all_core_envs=tuple(
+            core_build_env(config, device, profile)
+            for device in core_device_names
+            for profile in controller_profiles
+        ),
+        all_bridge_envs=tuple(bridge_build_env(config, profile) for profile in firmware_profiles),
+        usb_devices=tuple(
+            device for device in bridge_device_names if bridge_usb_port(config, device) is not None
+        ),
+    )
+
+
 def render_deploy_plan(
     config: StackConfig,
     stack: JsonObject,
     bridge_ota: BridgeOtaArtifacts | None = None,
 ) -> JsonObject:
     """Return exact PlatformIO environment names and commands for build/upload tools."""
-    bridge_device_names = list(bridge_devices(stack))
-    profiles = bridge_profiles(config)
-    default_profile = default_bridge_profile(profiles)
-    controller_profiles = core_profiles(config)
-    default_controller_profile = default_core_profile(controller_profiles)
-    core_devices = device_names(stack)
+    plan = stack_build_plan(config, stack)
+    default_profile = plan.default_bridge_profile
     core_project = project_command_path(config.platformio.core_project)
     bridge_project = project_command_path(config.platformio.bridge_project)
 
     core_plan: JsonObject = {}
-    for device in core_devices:
-        env_name = core_build_env(config, device, default_controller_profile)
+    for device in plan.core_devices:
+        env_name = core_build_env(config, device, plan.default_core_profile)
         core_plan[device] = {
             "env": env_name,
             "buildCommand": pio_command(core_project, [env_name], target=None),
@@ -67,16 +114,16 @@ def render_deploy_plan(
                     "buildCommand": pio_command(core_project, [profile_env], target=None),
                     "uploadCommand": pio_command(core_project, [profile_env], target="upload"),
                 }
-                for profile in controller_profiles
+                for profile in plan.core_profiles
             },
         }
 
     profile_plan: JsonObject = {}
-    for profile in profiles:
+    for profile in plan.bridge_profiles:
         profile_plan[profile_key(profile)] = _bridge_profile_plan(
             config=config,
             bridge_project=bridge_project,
-            devices=bridge_device_names,
+            devices=list(plan.bridge_devices),
             profile=profile,
             bridge_ota=bridge_ota,
         )
@@ -89,7 +136,7 @@ def render_deploy_plan(
     }
 
     bridge_plan: JsonObject = {}
-    for device in bridge_device_names:
+    for device in plan.bridge_devices:
         usb_target = bridge_usb_target(config, bridge_project, device, default_profile)
         ota_command = bridge_ota_command(
             config,
@@ -111,12 +158,6 @@ def render_deploy_plan(
             "otaCommand": ota_command,
         }
 
-    all_bridge_profile_build_envs = [bridge_build_env(config, profile) for profile in profiles]
-    all_core_profile_build_envs = [
-        core_build_env(config, device, profile)
-        for device in core_devices
-        for profile in controller_profiles
-    ]
     return {
         "schema": "lsh-stack-deploy-plan/v1",
         "coreProject": core_project,
@@ -127,7 +168,7 @@ def render_deploy_plan(
                 "baseEnv": profile.base_env,
                 "default": profile.default,
             }
-            for profile in controller_profiles
+            for profile in plan.core_profiles
         ],
         "bridgeProfiles": [
             {
@@ -136,7 +177,7 @@ def render_deploy_plan(
                 "default": profile.default,
                 "ota": profile.ota,
             }
-            for profile in profiles
+            for profile in plan.bridge_profiles
         ],
         "core": core_plan,
         "bridgeFirmware": bridge_firmware,
@@ -144,12 +185,12 @@ def render_deploy_plan(
         "batch": {
             "buildAllCoreProfiles": pio_command(
                 core_project,
-                all_core_profile_build_envs,
+                list(plan.all_core_envs),
                 target=None,
             ),
             "buildAllBridgeProfiles": pio_command(
                 bridge_project,
-                all_bridge_profile_build_envs,
+                list(plan.all_bridge_envs),
                 target=None,
             ),
         },

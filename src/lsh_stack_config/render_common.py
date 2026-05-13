@@ -38,53 +38,13 @@ def bridge_devices(stack: JsonObject) -> JsonObject:
 
 
 def bridge_profiles(config: StackConfig) -> tuple[BridgeProfileSettings, ...]:
-    """Return explicit bridge profiles or the implicit default profile."""
-    if config.platformio.bridge_profiles:
-        profiles = config.platformio.bridge_profiles
-        if any(profile.default for profile in profiles):
-            return profiles
-        first, *rest = profiles
-        return (
-            BridgeProfileSettings(
-                name=first.name,
-                base_env=first.base_env,
-                default=True,
-                ota=first.ota,
-            ),
-            *rest,
-        )
-    return (
-        BridgeProfileSettings(
-            name="",
-            base_env=config.platformio.bridge_base_env,
-            default=True,
-            ota=True,
-        ),
-    )
+    """Return explicit bridge firmware profiles."""
+    return config.platformio.bridge_profiles
 
 
 def core_profiles(config: StackConfig) -> tuple[CoreProfileSettings, ...]:
-    """Return explicit core profiles or the implicit default release profile."""
-    if config.platformio.core_profiles:
-        profiles = config.platformio.core_profiles
-        if any(profile.default for profile in profiles):
-            return profiles
-        first, *rest = profiles
-        return (
-            CoreProfileSettings(
-                name=first.name,
-                base_env=first.base_env,
-                default=True,
-            ),
-            *rest,
-        )
-    return (
-        CoreProfileSettings(
-            name="",
-            base_env=config.platformio.core_base_env,
-            default=True,
-        ),
-    )
+    """Return explicit controller firmware profiles."""
+    return config.platformio.core_profiles
 
 
 def default_core_profile(

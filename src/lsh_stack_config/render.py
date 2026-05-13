@@ -5,18 +5,21 @@ from __future__ import annotations
 import json
 import re
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 from .bridge_ota_script import render_bridge_ota_script
 from .commands import stack_command
 from .deploy import (
     BridgeOtaArtifacts,
+    StackBuildPlan,
     bridge_ota_command,
     bridge_ota_template,
     bridge_usb_port,
     pio_command,
     render_bridge_ota_config,
     render_deploy_plan,
+    stack_build_plan,
     uses_generated_bridge_ota_script,
 )
 from .models import BridgeProfileSettings, JsonObject, StackConfig
@@ -39,7 +42,6 @@ from .render_common import (
     core_build_env,
     core_profiles,
     default_bridge_profile,
-    default_core_profile,
     device_names,
     json_list,
     json_object,
@@ -369,18 +371,49 @@ def render_node_red_setup_guide(stack: JsonObject) -> str:
     return "\n".join(lines) + "\n"
 
 
+@dataclass(frozen=True)
+class _GeneratedReadmeContext:
+    config: StackConfig
+    stack: JsonObject
+    output_dir: Path
+    stack_root: Path
+    plan: StackBuildPlan
+    core_project: str
+    bridge_project: str
+    core_extra_config: str
+    bridge_extra_config: str
+    bridge_profile_names: str
+    bridge_ota: BridgeOtaArtifacts
+    sample_ota_device: str
+    default_ota_command: str | None
+    stack_cli_ota_available: bool
+
+
 def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: Path) -> str:
     """Render a friendly guide beside generated deployment artifacts."""
+    ctx = _generated_readme_context(config, stack, output_dir)
+    lines: list[str] = []
+    for section in (
+        _readme_intro_section,
+        _readme_platformio_include_section,
+        _readme_platformio_cli_section,
+        _readme_bridge_ota_section,
+        _readme_platformio_ide_section,
+        _readme_runtime_section,
+        _readme_generated_outputs_section,
+        _readme_overrides_section,
+    ):
+        lines.extend(section(ctx))
+    return "\n".join(lines) + "\n"
+
+
+def _generated_readme_context(
+    config: StackConfig,
+    stack: JsonObject,
+    output_dir: Path,
+) -> _GeneratedReadmeContext:
     stack_root = config.path.parent
-    devices = device_names(stack)
-    bridge_project = _project_command_path(config.platformio.bridge_project, stack_root)
-    core_project = _project_command_path(config.platformio.core_project, stack_root)
-    first_device = devices[0] if devices else "device"
-    core_env = core_build_env(
-        config,
-        first_device,
-        default_core_profile(core_profiles(config)),
-    )
+    plan = stack_build_plan(config, stack)
     core_extra_config = path_for_platformio(
         output_dir / "platformio-core.ini", config.platformio.core_project
     )
@@ -388,22 +421,6 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         output_dir / "platformio-bridge.ini",
         config.platformio.bridge_project,
     )
-    bridge_device_names = list(bridge_devices(stack))
-    controller_profiles = core_profiles(config)
-    profiles = bridge_profiles(config)
-    default_profile = default_bridge_profile(profiles)
-    bridge_env = bridge_build_env(config, default_profile)
-    usb_devices = [
-        device for device in bridge_device_names if bridge_usb_port(config, device) is not None
-    ]
-    bridge_build_envs = [bridge_build_env(config, profile) for profile in profiles]
-    core_build_envs = [
-        core_build_env(config, device, profile)
-        for device in devices
-        for profile in controller_profiles
-    ]
-    bridge_profile_names = ", ".join(profile_key(profile) for profile in profiles)
-    has_multiple_bridge_profiles = len(profiles) > 1
     bridge_ota_script_path = (
         output_dir / "bridge-ota.py" if uses_generated_bridge_ota_script(config) else None
     )
@@ -411,17 +428,32 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         output_dir / "bridge-ota.json" if uses_generated_bridge_ota_script(config) else None
     )
     bridge_ota = BridgeOtaArtifacts(script=bridge_ota_script_path, config=bridge_ota_config_path)
-    sample_ota_device = bridge_device_names[0] if bridge_device_names else ""
-    default_ota_command = bridge_ota_command(
-        config,
-        sample_ota_device,
-        f".pio/build/{bridge_build_env(config, default_profile)}/firmware.bin",
-        bridge_ota,
+    sample_ota_device = plan.bridge_devices[0] if plan.bridge_devices else ""
+    return _GeneratedReadmeContext(
+        config=config,
+        stack=stack,
+        output_dir=output_dir,
+        stack_root=stack_root,
+        plan=plan,
+        core_project=_project_command_path(config.platformio.core_project, stack_root),
+        bridge_project=_project_command_path(config.platformio.bridge_project, stack_root),
+        core_extra_config=core_extra_config,
+        bridge_extra_config=bridge_extra_config,
+        bridge_profile_names=", ".join(profile_key(profile) for profile in plan.bridge_profiles),
+        bridge_ota=bridge_ota,
+        sample_ota_device=sample_ota_device,
+        default_ota_command=bridge_ota_command(
+            config,
+            sample_ota_device,
+            f".pio/build/{plan.default_bridge_env}/firmware.bin",
+            bridge_ota,
+        ),
+        stack_cli_ota_available=uses_generated_bridge_ota_script(config),
     )
-    ota_targets_available = default_ota_command is not None
-    stack_cli_ota_available = uses_generated_bridge_ota_script(config)
 
-    lines = [
+
+def _readme_intro_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    return [
         "# Generated LSH Stack Files",
         "",
         "These files are generated from `lsh_stack.toml`. Edit the TOML files, then regenerate.",
@@ -432,27 +464,37 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         "After editing `lsh_stack.toml` or `core/lsh_devices.toml`:",
         "",
         "```bash",
-        stack_command("generate", config, config_base_dir=stack_root),
-        stack_command("doctor", config, config_base_dir=stack_root),
-        stack_command("status", config, config_base_dir=stack_root),
+        stack_command("generate", ctx.config, config_base_dir=ctx.stack_root),
+        stack_command("doctor", ctx.config, config_base_dir=ctx.stack_root),
+        stack_command("status", ctx.config, config_base_dir=ctx.stack_root),
         "```",
         "",
+    ]
+
+
+def _readme_platformio_include_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    return [
         "## PlatformIO Includes",
         "",
         "Controller project:",
         "",
         "```ini",
         "[platformio]",
-        f"extra_configs = {core_extra_config}",
+        f"extra_configs = {ctx.core_extra_config}",
         "```",
         "",
         "Bridge project:",
         "",
         "```ini",
         "[platformio]",
-        f"extra_configs = {bridge_extra_config}",
+        f"extra_configs = {ctx.bridge_extra_config}",
         "```",
         "",
+    ]
+
+
+def _readme_platformio_cli_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    lines = [
         "## PlatformIO CLI",
         "",
         "If `platformio` is available in your shell, these commands are the direct CLI "
@@ -461,34 +503,34 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
         "Build one controller firmware:",
         "",
         "```bash",
-        " ".join(pio_command(core_project, [core_env], target=None)),
+        " ".join(pio_command(ctx.core_project, [ctx.plan.default_core_env], target=None)),
         "```",
         "",
         "Build every controller firmware profile:",
         "",
         "```bash",
-        " ".join(pio_command(core_project, core_build_envs, target=None)),
+        " ".join(pio_command(ctx.core_project, list(ctx.plan.all_core_envs), target=None)),
         "```",
         "",
         "Build the default wide bridge firmware:",
         "",
         "```bash",
-        " ".join(pio_command(bridge_project, [bridge_env], target=None)),
+        " ".join(pio_command(ctx.bridge_project, [ctx.plan.default_bridge_env], target=None)),
         "```",
         "",
     ]
-    if has_multiple_bridge_profiles:
+    if len(ctx.plan.bridge_profiles) > 1:
         lines.extend(
             [
                 "Build every bridge firmware profile:",
                 "",
                 "```bash",
-                " ".join(pio_command(bridge_project, bridge_build_envs, target=None)),
+                " ".join(pio_command(ctx.bridge_project, list(ctx.plan.all_bridge_envs), None)),
                 "```",
                 "",
             ]
         )
-    if usb_devices:
+    if ctx.plan.usb_devices:
         lines.extend(
             [
                 "USB-upload configured bridge ports with the default profile firmware:",
@@ -497,12 +539,18 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
                 *[
                     " ".join(
                         pio_command(
-                            bridge_project,
-                            [bridge_usb_upload_env(config, default_profile, device)],
+                            ctx.bridge_project,
+                            [
+                                bridge_usb_upload_env(
+                                    ctx.config,
+                                    ctx.plan.default_bridge_profile,
+                                    device,
+                                )
+                            ],
                             target="upload",
                         )
                     )
-                    for device in usb_devices
+                    for device in ctx.plan.usb_devices
                 ],
                 "```",
                 "",
@@ -515,65 +563,79 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
             "",
         ]
     )
-    if default_ota_command is not None:
-        if stack_cli_ota_available:
-            lines.extend(
-                [
-                    "Build and OTA-upload bridge firmware from the stack CLI:",
-                    "",
-                    "```bash",
-                    stack_command("ota", config, sample_ota_device, config_base_dir=stack_root),
-                    stack_command("ota", config, config_base_dir=stack_root),
-                    "```",
-                    "",
-                    "With no device argument, the stack OTA command targets every configured "
-                    "bridge. Pass multiple device ids for a subset.",
-                    "If a prerequisite is missing, the command exits with the install "
-                    "command to run.",
-                    "",
-                ]
-            )
+    return lines
+
+
+def _readme_bridge_ota_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    if ctx.default_ota_command is None:
+        return []
+
+    lines: list[str] = []
+    if ctx.stack_cli_ota_available:
         lines.extend(
             [
-                "OTA a device subset with the default profile firmware from the bridge "
-                "project directory:",
+                "Build and OTA-upload bridge firmware from the stack CLI:",
                 "",
                 "```bash",
-                default_ota_command,
+                stack_command(
+                    "ota",
+                    ctx.config,
+                    ctx.sample_ota_device,
+                    config_base_dir=ctx.stack_root,
+                ),
+                stack_command("ota", ctx.config, config_base_dir=ctx.stack_root),
                 "```",
                 "",
-                "The command names its OTA config file with `--config`; edit "
-                "`lsh_stack.toml` and regenerate instead of editing that JSON by hand.",
-                "The wrapper finds the Homie OTA updater in a sibling checkout or "
-                "PlatformIO `libdeps`.",
-                "Pass `--updater` or set `LSH_HOMIE_OTA_UPDATER` when you want to pin "
-                "the updater path.",
+                "With no device argument, the stack OTA command targets every configured "
+                "bridge. Pass multiple device ids for a subset.",
+                "If a prerequisite is missing, the command exits with the install command to run.",
                 "",
             ]
         )
     lines.extend(
         [
-            "Use `deploy-plan.json` when another tool or script needs the same commands as data.",
+            "OTA a device subset with the default profile firmware from the bridge "
+            "project directory:",
             "",
-            "## PlatformIO IDE",
+            "```bash",
+            ctx.default_ota_command,
+            "```",
             "",
-            "Open the core or bridge project in VSCode with the PlatformIO extension. Refresh "
-            "Project Tasks after regenerating this directory.",
+            "The command names its OTA config file with `--config`; edit "
+            "`lsh_stack.toml` and regenerate instead of editing that JSON by hand.",
+            "The wrapper finds the Homie OTA updater in a sibling checkout or "
+            "PlatformIO `libdeps`.",
+            "Pass `--updater` or set `LSH_HOMIE_OTA_UPDATER` when you want to pin "
+            "the updater path.",
             "",
-            f"- Default bridge profile: `{profile_key(default_profile)}`.",
-            f"- Available bridge profiles: {bridge_profile_names}.",
-            f"- Build one default bridge firmware: Project Tasks -> `{bridge_env}` -> Build.",
-            f"- USB-upload one connected bridge: Project Tasks -> `{bridge_env}` -> Upload.",
-            "- Build or USB-upload one explicit profile: use `bridge_<profile>`.",
         ]
     )
-    if usb_devices:
-        lines.extend(
-            "- USB-upload configured device port: Project Tasks -> "
-            f"`{bridge_usb_upload_env(config, default_profile, device)}` -> Upload."
-            for device in usb_devices
-        )
-    if ota_targets_available:
+    return lines
+
+
+def _readme_platformio_ide_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    lines = [
+        "Use `deploy-plan.json` when another tool or script needs the same commands as data.",
+        "",
+        "## PlatformIO IDE",
+        "",
+        "Open the core or bridge project in VSCode with the PlatformIO extension. Refresh "
+        "Project Tasks after regenerating this directory.",
+        "",
+        f"- Default bridge profile: `{profile_key(ctx.plan.default_bridge_profile)}`.",
+        f"- Available bridge profiles: {ctx.bridge_profile_names}.",
+        "- Build one default bridge firmware: Project Tasks -> "
+        f"`{ctx.plan.default_bridge_env}` -> Build.",
+        "- USB-upload one connected bridge: Project Tasks -> "
+        f"`{ctx.plan.default_bridge_env}` -> Upload.",
+        "- Build or USB-upload one explicit profile: use `bridge_<profile>`.",
+    ]
+    lines.extend(
+        "- USB-upload configured device port: Project Tasks -> "
+        f"`{bridge_usb_upload_env(ctx.config, ctx.plan.default_bridge_profile, device)}` -> Upload."
+        for device in ctx.plan.usb_devices
+    )
+    if ctx.default_ota_command is not None:
         lines.extend(
             [
                 "",
@@ -599,76 +661,87 @@ def render_generated_readme(config: StackConfig, stack: JsonObject, output_dir: 
                 "`[deploy.bridge.ota]` is set in `lsh_stack.toml`.",
             ]
         )
-    lines.extend(
-        [
-            "",
-            "## Coordinator CLI",
-            "",
-            "Run the standalone coordinator with the generated system config and the same "
-            "runtime options used by Node-RED:",
-            "",
-            "```bash",
-            _coordinator_cli_command(
-                stack,
-                path_from(stack_root, output_dir / "system-config.json"),
-            ),
-            "```",
-            "",
-            "## Node-RED",
-            "",
-            "Install `node-red-contrib-lsh-logic`, add the node to a flow and follow "
-            "`node-red-setup.md`. The stack generates exact node settings, but the "
-            "surrounding Node-RED flow stays in Node-RED where it is easier to inspect and "
-            "change.",
-            "",
-            "## Generated Outputs",
-            "",
-            "- `lsh-stack-config.json`: complete stack export, including external actor metadata.",
-            "- `system-config.json`: coordinator `systemConfig`; use the Coordinator CLI "
-            "command above for matching runtime options.",
-            "- `node-red-setup.md`: Node-RED GUI setup steps and copy-paste values.",
-            "- `node-red-lsh-logic.json`: raw Node-RED `lsh-logic` node fields for scripts.",
-            "- `bridge-platformio-flags/bridge.txt`: bridge `build_flags` as a plain list.",
-            "- `platformio-core.ini`: controller build environments.",
-            *(
-                [
-                    "- `platformio-core-system-tools.py`: optional PlatformIO PATH helper "
-                    "for controller builds."
-                ]
-                if config.platformio.core_prefer_system_tools
-                else []
-            ),
-            "- `platformio-bridge.ini`: bridge build and upload environments.",
-            *(
-                ["- `platformio-bridge-targets.py`: PlatformIO IDE OTA helper targets."]
-                if uses_generated_bridge_ota_script(config)
-                else []
-            ),
-            *(
-                [
-                    "- `bridge-ota.py`: wrapper around the `homie-esp8266` OTA updater.",
-                    "- `bridge-ota.json`: broker and Homie defaults passed explicitly "
-                    "to bridge MQTT OTA.",
-                ]
-                if uses_generated_bridge_ota_script(config)
-                else []
-            ),
-            "- `deploy-plan.json`: build and upload commands as JSON.",
-            "- `README.generated.md`: this guide.",
-            "",
-            "## Persistent Overrides",
-            "",
-            "Keep hand-written PlatformIO extensions and local notes outside `generated/`, "
-            "usually in `overrides/`, `core/platformio.ini` or `bridge/platformio.ini`.",
-            "Deep compiler, linker, board, package and local toolchain choices stay in "
-            "those PlatformIO files. Use `platformio.core_prefer_system_tools = true` "
-            "only when generated core environments must prepend system compiler "
-            "directories before PlatformIO packages.",
-            "Bridge `defines` in `lsh_stack.toml` replace generated `-D` flags with the "
-            "same name before raw appended flags are added.",
-        ]
-    )
-    return "\n".join(lines) + "\n"
+    return lines
+
+
+def _readme_runtime_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    return [
+        "",
+        "## Coordinator CLI",
+        "",
+        "Run the standalone coordinator with the generated system config and the same "
+        "runtime options used by Node-RED:",
+        "",
+        "```bash",
+        _coordinator_cli_command(
+            ctx.stack,
+            path_from(ctx.stack_root, ctx.output_dir / "system-config.json"),
+        ),
+        "```",
+        "",
+        "## Node-RED",
+        "",
+        "Install `node-red-contrib-lsh-logic`, add the node to a flow and follow "
+        "`node-red-setup.md`. The stack generates exact node settings, but the "
+        "surrounding Node-RED flow stays in Node-RED where it is easier to inspect and "
+        "change.",
+        "",
+    ]
+
+
+def _readme_generated_outputs_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    return [
+        "## Generated Outputs",
+        "",
+        "- `lsh-stack-config.json`: complete stack export, including external actor metadata.",
+        "- `system-config.json`: coordinator `systemConfig`; use the Coordinator CLI "
+        "command above for matching runtime options.",
+        "- `node-red-setup.md`: Node-RED GUI setup steps and copy-paste values.",
+        "- `node-red-lsh-logic.json`: raw Node-RED `lsh-logic` node fields for scripts.",
+        "- `bridge-platformio-flags/bridge.txt`: bridge `build_flags` as a plain list.",
+        "- `platformio-core.ini`: controller build environments.",
+        *(
+            [
+                "- `platformio-core-system-tools.py`: optional PlatformIO PATH helper "
+                "for controller builds."
+            ]
+            if ctx.config.platformio.core_prefer_system_tools
+            else []
+        ),
+        "- `platformio-bridge.ini`: bridge build and upload environments.",
+        *(
+            ["- `platformio-bridge-targets.py`: PlatformIO IDE OTA helper targets."]
+            if uses_generated_bridge_ota_script(ctx.config)
+            else []
+        ),
+        *(
+            [
+                "- `bridge-ota.py`: wrapper around the `homie-esp8266` OTA updater.",
+                "- `bridge-ota.json`: broker and Homie defaults passed explicitly "
+                "to bridge MQTT OTA.",
+            ]
+            if uses_generated_bridge_ota_script(ctx.config)
+            else []
+        ),
+        "- `deploy-plan.json`: build and upload commands as JSON.",
+        "- `README.generated.md`: this guide.",
+        "",
+    ]
+
+
+def _readme_overrides_section(_ctx: _GeneratedReadmeContext) -> list[str]:
+    return [
+        "## Persistent Overrides",
+        "",
+        "Keep hand-written PlatformIO extensions and local notes outside `generated/`, "
+        "usually in `overrides/`, `core/platformio.ini` or `bridge/platformio.ini`.",
+        "Deep compiler, linker, board, package and local toolchain choices stay in "
+        "those PlatformIO files. Use `platformio.core_prefer_system_tools = true` "
+        "only when generated core environments must prepend system compiler "
+        "directories before PlatformIO packages.",
+        "Bridge `defines` in `lsh_stack.toml` replace generated `-D` flags with the "
+        "same name before raw appended flags are added.",
+    ]
 
 
 def _render_bridge_profile_env(  # noqa: PLR0913

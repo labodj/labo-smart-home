@@ -10,3 +10,15 @@ mode = "serial_bridge"
 
 [mqtt]
 codec = "json"
+
+[platformio]
+
+[[platformio.core_profiles]]
+name = "release"
+extends = "env:release"
+default = true
+
+[[platformio.bridge_profiles]]
+name = "release"
+extends = "env:release"
+default = true

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NoReturn, cast
 
@@ -56,6 +57,34 @@ _SOURCE_PART_COUNT = 2
 _UINT8_MAX = 255
 
 
+@dataclass(frozen=True)
+class _TomlReader:
+    table: TomlTable
+    path: str
+
+    def reject_unknown(self, allowed: set[str]) -> None:
+        _reject_unknown(self.table, allowed, self.path)
+
+    def path_value(self, key: str, default: str, base_dir: Path) -> Path:
+        return _path(self.table.get(key, default), f"{self.path}.{key}", base_dir)
+
+    def optional_path(self, key: str, base_dir: Path) -> Path | None:
+        if key not in self.table or self.table[key] is None:
+            return None
+        return _path(self.table[key], f"{self.path}.{key}", base_dir)
+
+    def string(self, key: str, default: str) -> str:
+        return _required_string(self.table.get(key, default), f"{self.path}.{key}")
+
+    def boolean(self, key: str, *, default: bool) -> bool:
+        return _bool(self.table.get(key, default), f"{self.path}.{key}")
+
+    def required_array(self, key: str) -> list[object]:
+        if key not in self.table:
+            _fail(f"{self.path}.{key} is required.")
+        return _array(self.table[key], f"{self.path}.{key}")
+
+
 def load_stack_config(path: Path) -> StackConfig:
     """Load and normalize a stack TOML file."""
     source = absolute_path(path)
@@ -97,7 +126,9 @@ def load_stack_config(path: Path) -> StackConfig:
         coordinator=_parse_coordinator(_table(raw.get("coordinator", {}), "coordinator")),
         node_red=_parse_node_red(_table(raw.get("node_red", {}), "node_red")),
         platformio=_parse_platformio(
-            _table(raw.get("platformio", {}), "platformio"),
+            _table(raw["platformio"], "platformio")
+            if "platformio" in raw
+            else _missing_table("platformio"),
             source.parent,
         ),
         deploy=_parse_deploy(_table(raw.get("deploy", {}), "deploy")),
@@ -110,13 +141,10 @@ def load_stack_config(path: Path) -> StackConfig:
 
 
 def _parse_core(table: TomlTable, base_dir: Path) -> CoreSettings:
-    _reject_unknown(table, {"devices", "tool", "selected_devices"}, "core")
-    devices = _path(table.get("devices", "lsh_devices.toml"), "core.devices", base_dir)
-    tool = (
-        _path(table["tool"], "core.tool", base_dir)
-        if "tool" in table and table["tool"] is not None
-        else None
-    )
+    reader = _TomlReader(table, "core")
+    reader.reject_unknown({"devices", "tool", "selected_devices"})
+    devices = reader.path_value("devices", "lsh_devices.toml", base_dir)
+    tool = reader.optional_path("tool", base_dir)
     selected_devices_list = _string_list(table.get("selected_devices", []), "core.selected_devices")
     _reject_duplicates(selected_devices_list, "core.selected_devices")
     selected_devices = tuple(selected_devices_list)
@@ -240,86 +268,46 @@ def _parse_node_red(table: TomlTable) -> NodeRedSettings:
 
 
 def _parse_platformio(table: TomlTable, base_dir: Path) -> PlatformioSettings:
-    _reject_unknown(
-        table,
+    reader = _TomlReader(table, "platformio")
+    reader.reject_unknown(
         {
             "core_project",
             "bridge_project",
             "core_extra_script",
-            "core_base_env",
             "core_profiles",
-            "bridge_base_env",
             "core_env_prefix",
             "bridge_env_prefix",
             "bridge_profiles",
             "core_prefer_system_tools",
         },
-        "platformio",
     )
     core_profiles = tuple(
         _parse_core_profile(raw_profile, index)
-        for index, raw_profile in enumerate(
-            _array(table.get("core_profiles", []), "platformio.core_profiles")
-        )
+        for index, raw_profile in enumerate(reader.required_array("core_profiles"))
     )
-    default_core_profiles = [profile.name for profile in core_profiles if profile.default]
     _reject_duplicates(
         [profile.name for profile in core_profiles],
         "platformio.core_profiles.name",
     )
-    if len(default_core_profiles) > 1:
-        defaults = ", ".join(default_core_profiles)
-        _fail(f"only one platformio.core_profiles entry can set default = true: {defaults}.")
+    _require_single_default_profile(core_profiles, "platformio.core_profiles")
     bridge_profiles = tuple(
         _parse_bridge_profile(raw_profile, index)
-        for index, raw_profile in enumerate(
-            _array(table.get("bridge_profiles", []), "platformio.bridge_profiles")
-        )
+        for index, raw_profile in enumerate(reader.required_array("bridge_profiles"))
     )
-    default_profiles = [profile.name for profile in bridge_profiles if profile.default]
     _reject_duplicates(
         [profile.name for profile in bridge_profiles],
         "platformio.bridge_profiles.name",
     )
-    if len(default_profiles) > 1:
-        defaults = ", ".join(default_profiles)
-        _fail(f"only one platformio.bridge_profiles entry can set default = true: {defaults}.")
+    _require_single_default_profile(bridge_profiles, "platformio.bridge_profiles")
     return PlatformioSettings(
-        core_project=(
-            _path(table["core_project"], "platformio.core_project", base_dir)
-            if "core_project" in table and table["core_project"] is not None
-            else None
-        ),
-        bridge_project=(
-            _path(table["bridge_project"], "platformio.bridge_project", base_dir)
-            if "bridge_project" in table and table["bridge_project"] is not None
-            else None
-        ),
-        core_extra_script=(
-            _path(table["core_extra_script"], "platformio.core_extra_script", base_dir)
-            if "core_extra_script" in table and table["core_extra_script"] is not None
-            else None
-        ),
-        core_base_env=_required_string(
-            table.get("core_base_env", "env:release"),
-            "platformio.core_base_env",
-        ),
+        core_project=reader.optional_path("core_project", base_dir),
+        bridge_project=reader.optional_path("bridge_project", base_dir),
+        core_extra_script=reader.optional_path("core_extra_script", base_dir),
         core_profiles=core_profiles,
-        bridge_base_env=_required_string(
-            table.get("bridge_base_env", "env:release"),
-            "platformio.bridge_base_env",
-        ),
-        core_env_prefix=_required_string(
-            table.get("core_env_prefix", "core"), "platformio.core_env_prefix"
-        ),
-        bridge_env_prefix=_required_string(
-            table.get("bridge_env_prefix", "bridge"), "platformio.bridge_env_prefix"
-        ),
+        core_env_prefix=reader.string("core_env_prefix", "core"),
+        bridge_env_prefix=reader.string("bridge_env_prefix", "bridge"),
         bridge_profiles=bridge_profiles,
-        core_prefer_system_tools=_bool(
-            table.get("core_prefer_system_tools", False),
-            "platformio.core_prefer_system_tools",
-        ),
+        core_prefer_system_tools=reader.boolean("core_prefer_system_tools", default=False),
     )
 
 
@@ -718,10 +706,28 @@ def _reject_duplicates(values: Sequence[object], path: str) -> None:
         seen[value] = index
 
 
+def _require_single_default_profile(
+    profiles: Sequence[CoreProfileSettings | BridgeProfileSettings],
+    path: str,
+) -> None:
+    if not profiles:
+        _fail(f"{path} must define at least one profile.")
+    defaults = [profile.name for profile in profiles if profile.default]
+    if len(defaults) == 1:
+        return
+    if not defaults:
+        _fail(f"exactly one {path} entry must set default = true.")
+    _fail(f"only one {path} entry can set default = true: {', '.join(defaults)}.")
+
+
 def _array(raw: object, path: str) -> list[object]:
     if not isinstance(raw, list):
         _fail(f"{path} must be an array.")
     return raw
+
+
+def _missing_table(path: str) -> NoReturn:
+    _fail(f"{path} table is required.")
 
 
 def _table(raw: object, path: str) -> TomlTable:

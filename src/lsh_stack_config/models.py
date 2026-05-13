@@ -96,9 +96,7 @@ class PlatformioSettings:
     core_project: Path | None = None
     bridge_project: Path | None = None
     core_extra_script: Path | None = None
-    core_base_env: str = "env:release"
     core_profiles: tuple[CoreProfileSettings, ...] = ()
-    bridge_base_env: str = "env:release"
     core_env_prefix: str = "core"
     bridge_env_prefix: str = "bridge"
     bridge_profiles: tuple[BridgeProfileSettings, ...] = ()

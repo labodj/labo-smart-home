@@ -90,7 +90,6 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
         "coreExtraScript": str(config.platformio.core_extra_script)
         if config.platformio.core_extra_script is not None
         else None,
-        "coreBaseEnv": config.platformio.core_base_env,
         "coreProfiles": [
             {
                 "name": profile.name,
@@ -99,7 +98,6 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
             }
             for profile in config.platformio.core_profiles
         ],
-        "bridgeBaseEnv": config.platformio.bridge_base_env,
         "coreEnvPrefix": config.platformio.core_env_prefix,
         "bridgeEnvPrefix": config.platformio.bridge_env_prefix,
         "bridgeProfiles": [

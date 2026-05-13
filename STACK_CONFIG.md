@@ -289,10 +289,9 @@ name = "debug"
 extends = "common_debug"
 ```
 
-The default core profile keeps the short environment name, such as `core_j1`. Other
-profiles append their name, such as `core_j1_debug`. If you do not define
-`platformio.core_profiles`, the generator creates exactly one controller profile from
-`platformio.core_base_env`.
+Exactly one core profile must set `default = true`. The default core profile keeps the
+short environment name, such as `core_j1`. Other profiles append their name, such as
+`core_j1_debug`.
 
 The bridge config uses the maximum required stack limits for `CONFIG_MAX_*` defines,
 such as actuators, buttons, indicators when present and name length. That means
@@ -328,13 +327,9 @@ name = "littlefs_migration_debug"
 extends = "lsh_bridge_littlefs_migration_debug"
 ```
 
-If you do not define `platformio.bridge_profiles`, the generator creates exactly one
-bridge profile from `platformio.bridge_base_env`. It is reported as `default` in
-`deploy-plan.json` and rendered as the normal `bridge` PlatformIO environment.
-
-With explicit profiles, the generated environment names include the profile name, for
-example `bridge_release`, `bridge_debug`, `bridge_littlefs`,
-`bridge_littlefs_migration`, `bridge_littlefs_debug` and
+Exactly one bridge profile must set `default = true`. Generated environment names
+include the profile name, for example `bridge_release`, `bridge_debug`,
+`bridge_littlefs`, `bridge_littlefs_migration`, `bridge_littlefs_debug` and
 `bridge_littlefs_migration_debug`. The default profile is recorded in `deploy-plan.json`
 and used by stack OTA commands.
 
@@ -441,9 +436,13 @@ Configure friendly USB upload environments in TOML:
 [platformio]
 core_project = "../core"
 bridge_project = "../bridge"
-bridge_base_env = "env:release"
 
 [[platformio.core_profiles]]
+name = "release"
+extends = "env:release"
+default = true
+
+[[platformio.bridge_profiles]]
 name = "release"
 extends = "env:release"
 default = true
@@ -468,8 +467,10 @@ default = true
 name = "debug"
 extends = "common_debug"
 
-[platformio]
-bridge_base_env = "bridge_base"
+[[platformio.bridge_profiles]]
+name = "release"
+extends = "bridge_base"
+default = true
 ```
 
 For controller builds, `platformio-core.ini` adds the `lsh-core` pre-build generator as

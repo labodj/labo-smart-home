@@ -23,21 +23,21 @@ computed.
 
 ## Module Ownership
 
-| Module                       | Owns                                                        |
-| ---------------------------- | ----------------------------------------------------------- |
-| `cli.py`                     | command dispatch and user-visible command output            |
-| `models.py`                  | typed configuration shape                                   |
-| `parser.py`                  | TOML validation and friendly errors                         |
-| `core_export.py`             | the boundary with `lsh-core`                                |
-| `composer.py`                | stack JSON semantics and cross-component values             |
-| `render.py`                  | generated files and generated guides                        |
-| `deploy.py`                  | PlatformIO, USB and MQTT OTA command strings                |
-| `render_common.py`           | tiny shared helpers used by CLI/render/deploy               |
-| `bridge_ota_script.py`       | source text for the generated bridge OTA wrapper            |
-| `platformio_batch_script.py` | source text for generated PlatformIO batch targets          |
-| `platformio_utils.py`        | PlatformIO ini parsing and path formatting                  |
-| `doctor.py`                  | plain-language diagnostics                                  |
-| `scaffold.py`                | starter project file writing                                |
+| Module                                | Owns                                                        |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `cli.py`                              | command dispatch and user-visible command output            |
+| `models.py`                           | typed configuration shape                                   |
+| `parser.py`                           | TOML validation and friendly errors                         |
+| `core_export.py`                      | the boundary with `lsh-core`                                |
+| `composer.py`                         | stack JSON semantics and cross-component values             |
+| `render.py`                           | generated files and generated guides                        |
+| `deploy.py`                           | PlatformIO profile planning, USB and MQTT OTA commands      |
+| `render_common.py`                    | tiny shared helpers used by CLI/render/deploy               |
+| `bridge_ota_script.py`                | source text for the generated bridge OTA wrapper            |
+| `platformio_bridge_targets_script.py` | source text for generated bridge OTA targets                |
+| `platformio_utils.py`                 | PlatformIO ini parsing and path formatting                  |
+| `doctor.py`                           | plain-language diagnostics                                  |
+| `scaffold.py`                         | starter project file writing                                |
 
 If a change needs logic from another module, prefer moving a small helper to
 `render_common.py` or `platformio_utils.py` over copy-pasting it.
@@ -54,9 +54,8 @@ If a change needs logic from another module, prefer moving a small helper to
   may use `uv`.
 - The generator must not copy protocol or OTA implementations from other projects. It
   should call stable entry points such as `homie-esp8266/scripts/homie_ota.py`.
-- Defaults are allowed only when they are documented. For example, when no bridge
-  profiles are configured, one default bridge profile is derived from
-  `platformio.bridge_base_env`.
+- Stack build profiles are explicit. `platformio.core_profiles` and
+  `platformio.bridge_profiles` must each define exactly one `default = true` entry.
 
 ## Test Rules
 

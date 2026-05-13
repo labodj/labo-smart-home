@@ -46,7 +46,6 @@ other_actors_context = "global"
 [platformio]
 core_project = "core"
 bridge_project = "bridge"
-bridge_base_env = "lsh_bridge_release"
 core_env_prefix = "core"
 bridge_env_prefix = "bridge"
 # Uncomment only when local core compiler flags need a system AVR toolchain.

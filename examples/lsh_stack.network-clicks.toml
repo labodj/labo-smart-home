@@ -23,6 +23,18 @@ export_topics = "flow"
 export_topics_key = "lsh_topics"
 other_actors_context = "global"
 
+[platformio]
+
+[[platformio.core_profiles]]
+name = "release"
+extends = "env:release"
+default = true
+
+[[platformio.bridge_profiles]]
+name = "release"
+extends = "env:release"
+default = true
+
 [external_actors.zigbee_table_lamp]
 state_key = "other_devices.zigbee_table_lamp.state"
 

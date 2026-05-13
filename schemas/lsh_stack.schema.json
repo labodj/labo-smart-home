@@ -4,7 +4,7 @@
   "title": "Labo Smart Home Stack Config",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "core"],
+  "required": ["schema_version", "core", "platformio"],
   "properties": {
     "schema_version": { "const": 1 },
     "core": {
@@ -68,46 +68,45 @@
     "platformio": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["core_profiles", "bridge_profiles"],
       "properties": {
         "core_project": { "type": "string", "minLength": 1 },
         "bridge_project": { "type": "string", "minLength": 1 },
         "core_extra_script": { "type": "string", "minLength": 1 },
-        "core_base_env": { "type": "string", "minLength": 1 },
         "core_profiles": {
           "type": "array",
           "items": { "$ref": "#/$defs/coreProfile" },
+          "minItems": 1,
           "uniqueItems": true,
           "allOf": [
             {
-              "not": {
-                "contains": {
-                  "type": "object",
-                  "required": ["default"],
-                  "properties": { "default": { "const": true } }
-                },
-                "minContains": 2
-              }
+              "contains": {
+                "type": "object",
+                "required": ["default"],
+                "properties": { "default": { "const": true } }
+              },
+              "minContains": 1,
+              "maxContains": 1
             }
           ]
         },
-        "bridge_base_env": { "type": "string", "minLength": 1 },
         "core_env_prefix": { "type": "string", "minLength": 1 },
         "bridge_env_prefix": { "type": "string", "minLength": 1 },
         "core_prefer_system_tools": { "type": "boolean" },
         "bridge_profiles": {
           "type": "array",
           "items": { "$ref": "#/$defs/bridgeProfile" },
+          "minItems": 1,
           "uniqueItems": true,
           "allOf": [
             {
-              "not": {
-                "contains": {
-                  "type": "object",
-                  "required": ["default"],
-                  "properties": { "default": { "const": true } }
-                },
-                "minContains": 2
-              }
+              "contains": {
+                "type": "object",
+                "required": ["default"],
+                "properties": { "default": { "const": true } }
+              },
+              "minContains": 1,
+              "maxContains": 1
             }
           ]
         }
