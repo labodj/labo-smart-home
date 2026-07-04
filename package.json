@@ -17,7 +17,7 @@
     "fix": "npm run format && npm run lint:md:fix && npm run lint:py:fix"
   },
   "devDependencies": {
-    "markdownlint-cli2": "^0.22.1",
+    "markdownlint-cli2": "^0.23.0",
     "prettier": "^3.8.3"
   }
 }
