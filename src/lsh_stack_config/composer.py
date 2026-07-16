@@ -318,7 +318,7 @@ def _resolve_mqtt_protocol(mqtt: MqttSettings, stack: JsonObject) -> Literal["js
     protocol = stack.get("protocol", "json")
     if protocol not in {"json", "msgpack"}:
         raise StackConfigError("core export protocol must be 'json' or 'msgpack'.")
-    return cast("Literal['json', 'msgpack']", protocol)
+    return protocol
 
 
 def _apply_mqtt_settings(
