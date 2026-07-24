@@ -41,11 +41,13 @@ src = ["src", "tests"]
 select = ["ALL"]
 ignore = [
   "COM812",
+  "CPY001",
   "D203",
   "D213",
   "EM101",
   "EM102",
   "ISC001",
+  "ISC004",
   "TC001",
   "TC003",
   "TRY003",
