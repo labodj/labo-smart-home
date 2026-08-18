@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, NoReturn
 from . import __version__
 from .cli_runtime import (
     bootstrap_core_project,
+    format_command,
     required_platformio_invocation,
     run_or_print,
     subprocess_env_with_ota_password,
@@ -139,15 +140,17 @@ Example:
 
     setup = subparsers.add_parser(
         "setup",
-        help="bootstrap, generate and check an installation project",
-        description="Create missing project shells, generate outputs and print the next commands.",
+        help="bootstrap, generate, check and build an installation project",
+        description=(
+            "Create missing project shells, generate outputs and build the default firmware."
+        ),
         formatter_class=formatter,
         epilog=f"""\
 Run from the stack project directory:
   {launcher} setup
 
-If PlatformIO CLI is not installed, build the core environment once from VSCode
-PlatformIO Project Tasks, then run the same setup command again.
+PlatformIO CLI is required because setup verifies every selected controller and
+the default bridge firmware before reporting success.
 """,
     )
     _add_config_option(setup)
@@ -246,8 +249,26 @@ def _setup(args: argparse.Namespace) -> int:
         config, stack = _compose(config_path)
 
     written = write_output_tree(output_dir, config, stack)
-    sys.stdout.write(render_report(config, stack))
+    _print_setup_report(config, stack, output_dir, written, scaffolded)
+
+    build_result = _build_stack_firmware(config, stack)
+    if build_result != 0:
+        return build_result
+
     sys.stdout.write("setup complete\n")
+    _print_setup_next_steps(config, stack, output_dir)
+    return 0
+
+
+def _print_setup_report(
+    config: StackConfig,
+    stack: JsonObject,
+    output_dir: Path,
+    written: list[Path],
+    scaffolded: list[Path],
+) -> None:
+    """Print generated files, diagnostics and newly scaffolded project files."""
+    sys.stdout.write(render_report(config, stack))
     sys.stdout.write("written files:\n")
     for path in written:
         sys.stdout.write(f"- {display_path(path)}\n")
@@ -262,9 +283,6 @@ def _setup(args: argparse.Namespace) -> int:
         sys.stdout.write("created project files:\n")
         for path in scaffolded:
             sys.stdout.write(f"- {display_path(path)}\n")
-
-    _print_setup_next_steps(config, stack, output_dir)
-    return 0
 
 
 def _ota(args: argparse.Namespace) -> int:
@@ -450,6 +468,11 @@ def _missing_core_tool_error(exc: StackConfigError) -> bool:
 def _bootstrap_core_if_needed(config: StackConfig) -> int:
     if not _should_bootstrap_core_project(config):
         return 0
+    # A generated fragment can contain paths from an older project location. The
+    # standalone core environment is the portable bootstrap source and setup
+    # recreates this disposable fragment immediately after the first build.
+    generated_core_fragment = config.path.parent / DEFAULT_OUTPUT_DIR / "platformio-core.ini"
+    generated_core_fragment.unlink(missing_ok=True)
     return bootstrap_core_project(config)
 
 
@@ -485,7 +508,7 @@ def _selected_bridge_devices(
             + ", ".join(available_devices)
             + "."
         )
-    return _deduplicate(selected)
+    return list(dict.fromkeys(selected))
 
 
 def _bridge_project(config: StackConfig) -> Path:
@@ -496,35 +519,57 @@ def _bridge_project(config: StackConfig) -> Path:
     return config.platformio.bridge_project
 
 
-def _deduplicate(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item in seen:
-            continue
-        seen.add(item)
-        result.append(item)
-    return result
-
-
 def _output_dir(config_path: Path) -> Path:
     return absolute_path(config_path).parent / DEFAULT_OUTPUT_DIR
+
+
+def _build_stack_firmware(config: StackConfig, stack: JsonObject) -> int:
+    """Build every selected core plus the default wide bridge firmware."""
+    plan = stack_build_plan(config, stack)
+    platformio = required_platformio_invocation(dry_run=False)
+    core_project = config.platformio.core_project or config.core.devices.parent
+    bridge_project = config.platformio.bridge_project or config.path.parent / "bridge"
+
+    core_command = [*platformio, "run", "-d", str(core_project)]
+    for device in plan.core_devices:
+        core_command.extend(["-e", core_build_env(config, device, plan.default_core_profile)])
+
+    sys.stdout.write("verifying firmware builds:\n")
+    if plan.core_devices and run_or_print(core_command, dry_run=False) != 0:
+        sys.stderr.write("lsh-stack setup stopped: controller firmware build failed.\n")
+        return 1
+
+    bridge_command = [
+        *platformio,
+        "run",
+        "-d",
+        str(bridge_project),
+        "-e",
+        plan.default_bridge_env,
+    ]
+    if run_or_print(bridge_command, dry_run=False) != 0:
+        sys.stderr.write("lsh-stack setup stopped: bridge firmware build failed.\n")
+        return 1
+
+    sys.stdout.write("firmware builds succeeded\n")
+    return 0
 
 
 def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: Path) -> None:
     plan = stack_build_plan(config, stack)
     first_device = plan.core_devices[0] if plan.core_devices else "device"
     core_project = config.platformio.core_project or config.core.devices.parent
-    bridge_project = config.platformio.bridge_project or config.path.parent
+    bridge_project = config.platformio.bridge_project or config.path.parent / "bridge"
 
     sys.stdout.write("next steps:\n")
-    sys.stdout.write(
-        f"- core build: platformio run -d {display_path(core_project)} -e {plan.default_core_env}\n"
+    core_command = format_command(
+        ["platformio", "run", "-d", str(core_project), "-e", plan.default_core_env]
     )
-    sys.stdout.write(
-        "- bridge build: "
-        f"platformio run -d {display_path(bridge_project)} -e {plan.default_bridge_env}\n"
+    bridge_command = format_command(
+        ["platformio", "run", "-d", str(bridge_project), "-e", plan.default_bridge_env]
     )
+    sys.stdout.write(f"- core build: {core_command}\n")
+    sys.stdout.write(f"- bridge build: {bridge_command}\n")
     if config.deploy.bridge.ota is not None:
         sys.stdout.write(f"- bridge OTA one: {_stack_ota_cli_command(config, first_device)}\n")
         sys.stdout.write(f"- bridge OTA all: {_stack_ota_cli_command(config)}\n")

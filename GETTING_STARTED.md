@@ -63,6 +63,8 @@ distributed click logic in the same pass.
 
 For the public reference path you need:
 
+- Python 3.11 or newer to run the dependency-free `lsh-stack` launcher
+- PlatformIO Core to compile the generated firmware
 - one controller target supported by `lsh-core`
 - one ESP32 target for `lsh-bridge`
 - one MQTT broker
@@ -212,14 +214,10 @@ cd my-lsh-core
 platformio run -e core_panel
 ```
 
-`setup` generates the first output set, checks the stack, and, when the PlatformIO CLI
-is available, builds the starter controller once if that is needed to install
-`lsh-core`. If you are recreating an installation from existing TOML files, `setup` also
-creates missing core/bridge PlatformIO project shells without overwriting existing
-project files.
-
-If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
-extension and run `core_panel` -> Build once, then rerun `lsh-stack setup`.
+`setup` creates missing core/bridge PlatformIO project shells without overwriting
+existing files, generates and checks the stack, then compiles every selected controller
+and the default bridge firmware. It reports success only after the complete default
+firmware set builds. PlatformIO must therefore be available to the shell running setup.
 
 When you are unsure about the current state, run:
 

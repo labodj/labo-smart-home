@@ -19,6 +19,30 @@ where each component lives, which docs to read next, and now also hosts the stac
 composer that turns controller contracts into bridge firmware fragments, coordinator
 configuration and Node-RED node settings.
 
+## Quick Start
+
+You need Python 3.11 or newer. The generator has no runtime Python dependencies and does
+not require `uv`. Firmware compilation also needs
+[PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/).
+
+Download the latest single-file launcher using only Python, create an installation and
+verify every generated controller plus the default bridge firmware:
+
+```bash
+python -c "from urllib.request import urlretrieve; urlretrieve('https://github.com/labodj/labo-smart-home/releases/latest/download/lsh-stack.pyz', 'lsh-stack.pyz')"
+python lsh-stack.pyz new my-lsh-installation
+cd my-lsh-installation
+python ../lsh-stack.pyz setup
+```
+
+On Windows, use `py` instead of `python` when that is the configured launcher. `setup`
+stops with a concrete error if PlatformIO is unavailable or any firmware fails to build;
+it does not need connected hardware. Git is not used by `lsh-stack` itself, but remains
+necessary for any PlatformIO dependency deliberately declared with a Git URL.
+
+The two files normally edited by an installation owner are `core/lsh_devices.toml` and
+`lsh_stack.toml`. Generated files stay under `generated/`.
+
 ## What LSH Is
 
 LSH is a reference stack for wired home automation. A Controllino controller keeps local
@@ -184,34 +208,9 @@ fragments for per-device controller environments and stack-wide bridge firmware
 profiles, so every bridge device can run the same selected bridge binary while keeping
 device-specific uploads as IDE targets.
 
-The normal starting point is one personal installation folder with two normal PlatformIO
-projects inside it:
-
-If `lsh-stack` is already installed:
-
-```bash
-lsh-stack new my-lsh-installation
-cd my-lsh-installation
-lsh-stack setup
-```
-
-From a GitHub Release, you can use the single-file launcher without checking out this
-repository:
-
-```bash
-python /path/to/lsh-stack.pyz new my-lsh-installation
-cd my-lsh-installation
-python /path/to/lsh-stack.pyz setup
-```
-
-From a checkout of this repository, use the standard Python launcher script. On Windows,
-use `py` instead of `python` if that is how Python is installed:
-
-```bash
-python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation
-cd my-lsh-installation
-python /path/to/labo-smart-home/lsh-stack.py setup
-```
+The normal starting point is the single installation folder shown in
+[Quick Start](#quick-start), with ordinary `core/` and `bridge/` PlatformIO projects
+inside it. Contributors can replace `lsh-stack.pyz` with this checkout's `lsh-stack.py`.
 
 If you only want to evaluate or build `lsh-core` firmware first, create a standalone
 controller project instead of the whole stack:
@@ -225,18 +224,18 @@ platformio run -e core_panel
 `new` writes `core/platformio.ini` and `bridge/platformio.ini` once, then leaves those
 manual files alone. If you already have only `lsh_stack.toml` and `lsh_devices.toml`,
 `setup` creates the missing core/bridge PlatformIO shells beside them without
-overwriting existing project files. Use either VSCode with the PlatformIO extension or
-the `platformio` CLI if it is available. The `setup` command runs the normal first-use
-sequence: it installs/builds the starter core once when the PlatformIO CLI is available,
-regenerates `generated/`, checks the stack and prints the next build targets. The
-lower-level `generate` command still replaces only the files in `generated/`.
+overwriting existing project files. The `setup` command installs the starter core tools,
+regenerates `generated/`, checks the stack, builds every selected controller with its
+default profile and builds the default wide bridge firmware. The lower-level `generate`
+command still replaces only the files in `generated/` without compiling firmware.
 
 Run `lsh-stack status` whenever you are unsure what has already been generated or which
 command should come next. It does not build firmware or rewrite files.
 
-For local or symlinked controller checkouts, set `[core].tool`; generated controller
-environments then use the matching local `platformio_lsh_static_config.py` instead of a
-`.pio/libdeps` path.
+For library development, keep release dependencies in the normal `platformio.ini` and
+override only `lib_deps` from an ignored PlatformIO `extra_configs` file using
+`symlink://`. Set `[core].tool` only when the generator itself must use a checkout
+before PlatformIO has installed that checkout.
 
 Edit `core/lsh_devices.toml` and `lsh_stack.toml`; treat `generated/` as disposable;
 keep persistent manual extensions in `overrides/` or in the `core/` and `bridge/`

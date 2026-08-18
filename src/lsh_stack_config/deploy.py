@@ -18,10 +18,8 @@ from .platformio_utils import path_for_platformio, project_command_path
 from .render_common import (
     bridge_build_env,
     bridge_devices,
-    bridge_profiles,
     bridge_usb_upload_env,
     core_build_env,
-    core_profiles,
     default_bridge_profile,
     default_core_profile,
     device_names,
@@ -59,8 +57,8 @@ def stack_build_plan(config: StackConfig, stack: JsonObject) -> StackBuildPlan:
     """Return shared PlatformIO profile and environment names for a stack."""
     core_device_names = tuple(device_names(stack))
     bridge_device_names = tuple(bridge_devices(stack))
-    controller_profiles = core_profiles(config)
-    firmware_profiles = bridge_profiles(config)
+    controller_profiles = config.platformio.core_profiles
+    firmware_profiles = config.platformio.bridge_profiles
     default_controller_profile = default_core_profile(controller_profiles)
     default_firmware_profile = default_bridge_profile(firmware_profiles)
     return StackBuildPlan(

@@ -25,7 +25,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": { "enum": ["serial_bridge", "onboard_ethernet"] }
+        "mode": { "const": "serial_bridge" }
       }
     },
     "mqtt": {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 from dataclasses import dataclass
@@ -37,10 +38,8 @@ from .render_common import (
     bridge_build_env,
     bridge_devices,
     bridge_flag_section,
-    bridge_profiles,
     bridge_usb_upload_env,
     core_build_env,
-    core_profiles,
     default_bridge_profile,
     device_names,
     json_list,
@@ -62,7 +61,7 @@ def render_report(config: StackConfig, stack: JsonObject) -> str:
     bridge = json_object(stack["bridge"])
     bridge_devices = json_object(bridge["devices"])
     bridge_flags = json_list(bridge["platformioBuildFlags"])
-    profiles = bridge_profiles(config)
+    profiles = config.platformio.bridge_profiles
     profile_word = "profile" if len(profiles) == 1 else "profiles"
     mapped_clicks = json_list(stack.get("mappedNetworkClicks", []))
     unmapped_clicks = json_list(coordinator.get("unmappedNetworkClicks", []))
@@ -85,51 +84,60 @@ def render_report(config: StackConfig, stack: JsonObject) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _write_if_changed(path: Path, content: str) -> None:
+    """Write changed content while preserving useful build-input modification times."""
+    try:
+        if path.read_bytes() == content.encode("utf-8"):
+            return
+    except FileNotFoundError:
+        pass
+    path.write_text(content, encoding="utf-8")
+
+
 def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) -> list[Path]:
     """Write the generated files consumed by bridge, coordinator and Node-RED."""
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
 
     stack_path = output_dir / "lsh-stack-config.json"
-    stack_path.write_text(stack_json(stack), encoding="utf-8")
+    _write_if_changed(stack_path, stack_json(stack))
     written.append(stack_path)
 
     coordinator = json_object(stack["coordinator"])
     system_config_path = output_dir / "system-config.json"
-    system_config_path.write_text(
-        stack_json(json_object(coordinator["systemConfig"])), encoding="utf-8"
-    )
+    _write_if_changed(system_config_path, stack_json(json_object(coordinator["systemConfig"])))
     written.append(system_config_path)
 
     node_red = json_object(json_object(stack["nodeRed"])["lshLogic"])
     node_red_path = output_dir / "node-red-lsh-logic.json"
-    node_red_path.write_text(stack_json(node_red), encoding="utf-8")
+    _write_if_changed(node_red_path, stack_json(node_red))
     written.append(node_red_path)
 
     node_red_guide_path = output_dir / "node-red-setup.md"
-    node_red_guide_path.write_text(render_node_red_setup_guide(stack), encoding="utf-8")
+    _write_if_changed(node_red_guide_path, render_node_red_setup_guide(stack))
     written.append(node_red_guide_path)
 
     bridge_dir = output_dir / "bridge-platformio-flags"
     bridge_dir.mkdir(exist_ok=True)
-    for stale_flag_file in bridge_dir.glob("*.txt"):
-        stale_flag_file.unlink()
-    bridge_flags = json_list(json_object(stack["bridge"])["platformioBuildFlags"])
     flag_path = bridge_dir / "bridge.txt"
-    flag_path.write_text("\n".join(str(flag) for flag in bridge_flags) + "\n", encoding="utf-8")
+    for stale_flag_file in bridge_dir.glob("*.txt"):
+        if stale_flag_file != flag_path:
+            stale_flag_file.unlink()
+    bridge_flags = json_list(json_object(stack["bridge"])["platformioBuildFlags"])
+    _write_if_changed(flag_path, "\n".join(str(flag) for flag in bridge_flags) + "\n")
     written.append(flag_path)
 
     core_system_tools_script_path = _write_core_system_tools_script(output_dir, config, written)
 
     core_ini_path = output_dir / "platformio-core.ini"
-    core_ini_path.write_text(
+    _write_if_changed(
+        core_ini_path,
         render_platformio_core_ini(
             config,
             stack,
             core_ini_path,
             core_system_tools_script_path,
         ),
-        encoding="utf-8",
     )
     written.append(core_ini_path)
 
@@ -137,7 +145,8 @@ def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) 
     bridge_targets_script_path = _write_bridge_targets_script(output_dir, config, written)
 
     bridge_ini_path = output_dir / "platformio-bridge.ini"
-    bridge_ini_path.write_text(
+    _write_if_changed(
+        bridge_ini_path,
         render_platformio_bridge_ini(
             config,
             stack,
@@ -145,12 +154,12 @@ def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) 
             bridge_targets_script_path,
             bridge_ota,
         ),
-        encoding="utf-8",
     )
     written.append(bridge_ini_path)
 
     deploy_plan_path = output_dir / "deploy-plan.json"
-    deploy_plan_path.write_text(
+    _write_if_changed(
+        deploy_plan_path,
         stack_json(
             render_deploy_plan(
                 config,
@@ -158,12 +167,11 @@ def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) 
                 bridge_ota,
             )
         ),
-        encoding="utf-8",
     )
     written.append(deploy_plan_path)
 
     guide_path = output_dir / "README.generated.md"
-    guide_path.write_text(render_generated_readme(config, stack, output_dir), encoding="utf-8")
+    _write_if_changed(guide_path, render_generated_readme(config, stack, output_dir))
     written.append(guide_path)
 
     return written
@@ -177,7 +185,7 @@ def _write_bridge_targets_script(
     targets_path = output_dir / "platformio-bridge-targets.py"
     stale_batch_path = output_dir / "platformio-bridge-batch.py"
     if uses_generated_bridge_ota_script(config):
-        targets_path.write_text(render_platformio_bridge_targets_script(), encoding="utf-8")
+        _write_if_changed(targets_path, render_platformio_bridge_targets_script())
         written.append(targets_path)
         if stale_batch_path.exists():
             stale_batch_path.unlink()
@@ -196,7 +204,7 @@ def _write_core_system_tools_script(
 ) -> Path | None:
     script_path = output_dir / "platformio-core-system-tools.py"
     if config.platformio.core_prefer_system_tools:
-        script_path.write_text(render_platformio_core_system_tools_script(), encoding="utf-8")
+        _write_if_changed(script_path, render_platformio_core_system_tools_script())
         written.append(script_path)
         return script_path
     if script_path.exists():
@@ -212,9 +220,9 @@ def _write_bridge_ota_artifacts(
     script_path = output_dir / "bridge-ota.py"
     config_path = output_dir / "bridge-ota.json"
     if uses_generated_bridge_ota_script(config):
-        script_path.write_text(render_bridge_ota_script(), encoding="utf-8")
+        _write_if_changed(script_path, render_bridge_ota_script())
         written.append(script_path)
-        config_path.write_text(stack_json(render_bridge_ota_config(config)), encoding="utf-8")
+        _write_if_changed(config_path, stack_json(render_bridge_ota_config(config)))
         written.append(config_path)
         return BridgeOtaArtifacts(script=script_path, config=config_path)
 
@@ -233,7 +241,7 @@ def render_platformio_core_ini(
 ) -> str:
     """Render PlatformIO environments for controller firmware builds."""
     devices = device_names(stack)
-    profiles = core_profiles(config)
+    profiles = config.platformio.core_profiles
     core_project = config.platformio.core_project
     config_path = path_for_platformio(config.core.devices, core_project)
     ini_ref = path_for_platformio(ini_path, core_project)
@@ -280,7 +288,7 @@ def render_platformio_bridge_ini(
 ) -> str:
     """Render one wide bridge firmware per profile plus OTA targets per device."""
     bridge_device_names = list(bridge_devices(stack))
-    profiles = bridge_profiles(config)
+    profiles = config.platformio.bridge_profiles
     default_profile = default_bridge_profile(profiles)
     target_script = (
         path_for_platformio(target_script_path, config.platformio.bridge_project)
@@ -453,15 +461,17 @@ def _generated_readme_context(
 
 
 def _readme_intro_section(ctx: _GeneratedReadmeContext) -> list[str]:
+    devices_path = path_from(ctx.stack_root, ctx.config.core.devices)
     return [
         "# Generated LSH Stack Files",
         "",
-        "These files are generated from `lsh_stack.toml`. Edit the TOML files, then regenerate.",
+        "These files are generated from the stack and controller TOML files. "
+        "Edit those sources, then regenerate.",
         "Commands below are intended to be run from the stack project root.",
         "",
         "## Regenerate",
         "",
-        "After editing `lsh_stack.toml` or `core/lsh_devices.toml`:",
+        f"After editing `lsh_stack.toml` or `{devices_path}`:",
         "",
         "```bash",
         stack_command("generate", ctx.config, config_base_dir=ctx.stack_root),
@@ -503,19 +513,19 @@ def _readme_platformio_cli_section(ctx: _GeneratedReadmeContext) -> list[str]:
         "Build one controller firmware:",
         "",
         "```bash",
-        " ".join(pio_command(ctx.core_project, [ctx.plan.default_core_env], target=None)),
+        shlex.join(pio_command(ctx.core_project, [ctx.plan.default_core_env], target=None)),
         "```",
         "",
         "Build every controller firmware profile:",
         "",
         "```bash",
-        " ".join(pio_command(ctx.core_project, list(ctx.plan.all_core_envs), target=None)),
+        shlex.join(pio_command(ctx.core_project, list(ctx.plan.all_core_envs), target=None)),
         "```",
         "",
         "Build the default wide bridge firmware:",
         "",
         "```bash",
-        " ".join(pio_command(ctx.bridge_project, [ctx.plan.default_bridge_env], target=None)),
+        shlex.join(pio_command(ctx.bridge_project, [ctx.plan.default_bridge_env], target=None)),
         "```",
         "",
     ]
@@ -525,7 +535,7 @@ def _readme_platformio_cli_section(ctx: _GeneratedReadmeContext) -> list[str]:
                 "Build every bridge firmware profile:",
                 "",
                 "```bash",
-                " ".join(pio_command(ctx.bridge_project, list(ctx.plan.all_bridge_envs), None)),
+                shlex.join(pio_command(ctx.bridge_project, list(ctx.plan.all_bridge_envs), None)),
                 "```",
                 "",
             ]
@@ -537,7 +547,7 @@ def _readme_platformio_cli_section(ctx: _GeneratedReadmeContext) -> list[str]:
                 "",
                 "```bash",
                 *[
-                    " ".join(
+                    shlex.join(
                         pio_command(
                             ctx.bridge_project,
                             [
@@ -859,7 +869,7 @@ def _coordinator_cli_command(stack: JsonObject, system_config_path: str) -> str:
         system_config_path,
         *_coordinator_cli_options(options),
     ]
-    return " ".join(shlex.quote(part) for part in command)
+    return shlex.join(command)
 
 
 def _project_command_path(path: Path | None, base_dir: Path) -> str:
@@ -909,6 +919,11 @@ def _core_static_config_script_path(config: StackConfig, env_name: str) -> str:
 
     if config.core.tool is not None:
         script = config.core.tool.parent / "platformio_lsh_static_config.py"
+        return path_for_platformio(script, config.platformio.core_project)
+
+    env_tool = os.environ.get("LSH_CORE_TOOL")
+    if env_tool:
+        script = Path(env_tool).expanduser().resolve().parent / "platformio_lsh_static_config.py"
         return path_for_platformio(script, config.platformio.core_project)
 
     return f".pio/libdeps/{env_name}/lsh-core/tools/platformio_lsh_static_config.py"

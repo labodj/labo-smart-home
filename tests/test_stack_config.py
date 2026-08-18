@@ -14,6 +14,7 @@ import pytest
 from lsh_stack_config import cli, cli_runtime, scaffold
 from lsh_stack_config.composer import compose_stack
 from lsh_stack_config.errors import StackConfigError
+from lsh_stack_config.launcher import command_arg
 from lsh_stack_config.models import JsonObject, StackConfig
 from lsh_stack_config.parser import load_stack_config
 from lsh_stack_config.render import write_output_tree
@@ -200,6 +201,67 @@ def test_stack_config_writes_platformio_fragments_and_deploy_plan(tmp_path: Path
     assert "Developer: Reload Window" in generated_readme
 
 
+def test_output_generation_skips_unchanged_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regenerating identical output should preserve build-input modification times."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [deploy.bridge.ota]
+        broker_host = "mqtt.lan"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+    output_dir = tmp_path / "generated"
+    expected = write_output_tree(output_dir, config, stack)
+
+    def reject_write(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("unchanged generated files must not be rewritten")
+
+    monkeypatch.setattr(Path, "write_text", reject_write)
+    assert write_output_tree(output_dir, config, stack) == expected
+
+
+def test_rendered_commands_quote_paths_with_spaces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Displayed commands remain executable when a project path contains spaces."""
+    project_dir = tmp_path / "stack project"
+    project_dir.mkdir()
+    config_path = _write_stack_config(
+        project_dir,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core project"
+        bridge_project = "bridge project"
+        """,
+    )
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _core_export())
+    output_dir = project_dir / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    readme = (output_dir / "README.generated.md").read_text(encoding="utf-8")
+    assert "platformio run -d 'core project'" in readme
+    assert "platformio run -d 'bridge project'" in readme
+
+    monkeypatch.chdir(tmp_path)
+    command = ["platformio", "run", "-d", str(tmp_path / "bridge project")]
+    assert cli_runtime.format_command(command) == (
+        f"platformio run -d {command_arg('bridge project')}"
+    )
+
+
 def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     """Users can configure broker-specific OTA arguments without shell templates."""
     config_path = _write_stack_config(
@@ -256,6 +318,9 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     assert 'root / "bridge" / ".pio" / "libdeps"' in ota_script_text
     assert "paho-mqtt" in ota_script_text
     assert "def _help_requested" in ota_script_text
+    assert "def _updater_candidates" in ota_script_text
+    assert "updater = _find_updater_or_none(candidates)" in ota_script_text
+    assert "_find_updater_or_none(explicit)" not in ota_script_text
     assert "MQTT/OTA password" in ota_script_text
     assert "subprocess.run(" in ota_script_text
     assert "[sys.executable, str(updater), *passthrough]" in ota_script_text
@@ -532,6 +597,43 @@ def test_stack_config_derives_local_core_extra_script_and_preserves_base_scripts
 
     core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
     assert "extra_scripts =\n    ${common_release.extra_scripts}\n" in core_ini
+    assert "pre:../lsh-core/tools/platformio_lsh_static_config.py" in core_ini
+    assert ".pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
+
+
+def test_stack_config_uses_environment_core_tool_for_platformio_script(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The environment override selects one checkout for export and PlatformIO generation."""
+    core_project = tmp_path / "core"
+    core_project.mkdir()
+    (core_project / "platformio.ini").write_text(
+        "[common_release]\nframework = arduino\n",
+        encoding="utf-8",
+    )
+    core_tool = tmp_path / "lsh-core" / "tools" / "generate_lsh_static_config.py"
+    core_tool.parent.mkdir(parents=True)
+    core_tool.write_text("", encoding="utf-8")
+    (core_tool.parent / "platformio_lsh_static_config.py").write_text("", encoding="utf-8")
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        """,
+    )
+    monkeypatch.setenv("LSH_CORE_TOOL", str(core_tool))
+    config = load_stack_config(config_path)
+    stack = compose_stack(config, _starter_core_export())
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, stack)
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
     assert "pre:../lsh-core/tools/platformio_lsh_static_config.py" in core_ini
     assert ".pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
 
@@ -918,7 +1020,7 @@ def test_lsh_stack_new_creates_personal_project_shape(tmp_path: Path) -> None:
     assert "lsh-stack.py generate" in readme
     assert "lsh-stack.py status" in readme
     assert "Use the doctor" in readme
-    assert "after setup has succeeded" in readme
+    assert "without compiling firmware" in readme
     assert "uv run" not in readme
     devices_toml = (project / "core" / "lsh_devices.toml").read_text(encoding="utf-8")
     assert '# long = { network = true, fallback = "do_nothing" }' in devices_toml
@@ -958,6 +1060,7 @@ def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> N
 
     platformio_ini = (project / "platformio.ini").read_text(encoding="utf-8")
     assert "extra_configs = generated/platformio-core.ini" in platformio_ini
+    assert "labodj/lsh-core @ ^4" in platformio_ini
     assert "[env:core_panel]" in platformio_ini
 
     readme = (project / "README.md").read_text(encoding="utf-8")
@@ -992,7 +1095,7 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
     assert cli.main(["new", str(project)]) == 0
 
     config = load_stack_config(project / "lsh_stack.toml")
-    stack = compose_stack(config, _starter_core_export())
+    stack = compose_stack(config, _core_export())
     compose_calls = 0
 
     def fake_compose(_path: Path) -> tuple[StackConfig, JsonObject]:
@@ -1001,6 +1104,7 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
         return config, stack
 
     run_commands: list[list[str]] = []
+    build_commands: list[list[str]] = []
 
     def fake_run(
         command: list[str],
@@ -1012,10 +1116,23 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
         assert not check
         assert capture_output
         assert text
+        assert not (project / "generated" / "platformio-core.ini").exists()
         run_commands.append(command)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
+    def fake_build(
+        command: list[str],
+        *,
+        dry_run: bool,
+        env: dict[str, str] | None = None,
+    ) -> int:
+        assert not dry_run
+        assert env is None
+        build_commands.append(command)
+        return 0
+
     monkeypatch.setattr(cli, "_compose", fake_compose)
+    monkeypatch.setattr(cli, "run_or_print", fake_build)
     monkeypatch.setattr(cli_runtime, "platformio_invocation", lambda: ["platformio"])
     monkeypatch.setattr("lsh_stack_config.cli_runtime.subprocess.run", fake_run)
     monkeypatch.chdir(project)
@@ -1024,13 +1141,54 @@ def test_lsh_stack_setup_bootstraps_core_and_generates(
 
     assert compose_calls == 1
     assert run_commands == [["platformio", "run", "-d", str(project / "core"), "-e", "core_panel"]]
+    assert build_commands == [
+        [
+            "platformio",
+            "run",
+            "-d",
+            str(project / "core"),
+            "-e",
+            "core_panel",
+            "-e",
+            "core_lights",
+        ],
+        ["platformio", "run", "-d", str(project / "bridge"), "-e", "bridge_littlefs"],
+    ]
     assert (project / "generated" / "README.generated.md").is_file()
     output = capsys.readouterr().out
     assert "lsh-core generator not found; building the core project once" in output
     assert "lsh-core bootstrap build succeeded." in output
+    assert "firmware builds succeeded" in output
     assert "setup complete" in output
     assert "next steps:" in output
     assert "bridge build: platformio run -d bridge -e bridge_littlefs" in output
+
+
+def test_setup_next_steps_default_to_bridge_subdirectory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The displayed fallback must match the bridge project setup actually builds."""
+    project = tmp_path / "installation"
+    project.mkdir()
+    config = load_stack_config(
+        _write_stack_config(
+            project,
+            """
+            [core]
+            devices = "core/lsh_devices.toml"
+            """,
+        )
+    )
+    stack = compose_stack(config, _core_export())
+    monkeypatch.chdir(tmp_path)
+
+    cli._print_setup_next_steps(config, stack, project / "generated")  # noqa: SLF001
+
+    assert "bridge build: platformio run -d installation/bridge -e bridge_release" in (
+        capsys.readouterr().out
+    )
 
 
 def test_lsh_stack_status_guides_fresh_project_without_core_generator(
@@ -1137,7 +1295,7 @@ def test_lsh_stack_setup_without_platformio_prints_actionable_recovery(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A missing PlatformIO CLI should explain both CLI and VSCode recovery paths."""
+    """A missing PlatformIO CLI should provide the installer and exact retry command."""
     archive = tmp_path / "lsh-stack.pyz"
     archive.write_bytes(b"zipapp")
     project = tmp_path / "fresh-installation"
@@ -1154,8 +1312,8 @@ def test_lsh_stack_setup_without_platformio_prints_actionable_recovery(
     error = capsys.readouterr().err
     expected_command = f"/usr/bin/python3 {archive.resolve()} setup"
     assert "PlatformIO CLI is not available" in error
-    assert f"Install the PlatformIO CLI, then run: {expected_command}" in error
-    assert "in VSCode with the PlatformIO extension" in error
+    assert "https://docs.platformio.org/en/latest/core/installation/" in error
+    assert expected_command in error
     assert "first core build downloads lsh-core" in error
 
 
@@ -1246,6 +1404,7 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
 
     monkeypatch.setattr(cli, "_should_bootstrap_core_project", lambda _config: False)
     monkeypatch.setattr(cli, "_compose", lambda _path: (config, stack))
+    monkeypatch.setattr(cli, "_build_stack_firmware", lambda _config, _stack: 0)
     monkeypatch.chdir(stack_project)
 
     assert cli.main(["setup"]) == 0
@@ -1257,6 +1416,10 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     assert (tmp_path / "lsh-bridge-personal" / "platformio.ini").is_file()
     assert (tmp_path / "lsh-bridge-personal" / "src" / "main.cpp").is_file()
     assert (stack_project / "overrides" / "README.md").is_file()
+    generated_readme = (stack_project / "generated" / "README.generated.md").read_text(
+        encoding="utf-8"
+    )
+    assert "`../lsh-core-personal/lsh_devices.toml`" in generated_readme
     output = capsys.readouterr().out
     assert "created project files:" in output
 
@@ -1769,8 +1932,8 @@ def test_stack_config_rejects_duplicate_resolved_actor_actuator_ids(tmp_path: Pa
         compose_stack(load_stack_config(config_path), _core_export())
 
 
-def test_stack_config_reserves_bridgeless_mode_until_core_support_exists(tmp_path: Path) -> None:
-    """Future transport names are explicit but cannot silently generate wrong output."""
+def test_stack_config_rejects_unsupported_transport_mode(tmp_path: Path) -> None:
+    """Only transport modes implemented by the composer are accepted."""
     config_path = _write_stack_config(
         tmp_path,
         """
@@ -1778,12 +1941,12 @@ def test_stack_config_reserves_bridgeless_mode_until_core_support_exists(tmp_pat
         devices = "lsh_devices.toml"
 
         [transport]
-        mode = "onboard_ethernet"
+        mode = "ethernet"
         """,
     )
 
-    with pytest.raises(StackConfigError, match="reserved for future bridgeless firmware"):
-        compose_stack(load_stack_config(config_path), _core_export())
+    with pytest.raises(StackConfigError, match=r"transport\.mode must be one of: serial_bridge"):
+        load_stack_config(config_path)
 
 
 def _write_stack_config(tmp_path: Path, content: str) -> Path:

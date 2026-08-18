@@ -23,21 +23,21 @@ computed.
 
 ## Module Ownership
 
-| Module                                | Owns                                                        |
-| ------------------------------------- | ----------------------------------------------------------- |
-| `cli.py`                              | command dispatch and user-visible command output            |
-| `models.py`                           | typed configuration shape                                   |
-| `parser.py`                           | TOML validation and friendly errors                         |
-| `core_export.py`                      | the boundary with `lsh-core`                                |
-| `composer.py`                         | stack JSON semantics and cross-component values             |
-| `render.py`                           | generated files and generated guides                        |
-| `deploy.py`                           | PlatformIO profile planning, USB and MQTT OTA commands      |
-| `render_common.py`                    | tiny shared helpers used by CLI/render/deploy               |
-| `bridge_ota_script.py`                | source text for the generated bridge OTA wrapper            |
-| `platformio_bridge_targets_script.py` | source text for generated bridge OTA targets                |
-| `platformio_utils.py`                 | PlatformIO ini parsing and path formatting                  |
-| `doctor.py`                           | plain-language diagnostics                                  |
-| `scaffold.py`                         | starter project file writing                                |
+| Module                                | Owns                                                   |
+| ------------------------------------- | ------------------------------------------------------ |
+| `cli.py`                              | command dispatch and user-visible command output       |
+| `models.py`                           | typed configuration shape                              |
+| `parser.py`                           | TOML validation and friendly errors                    |
+| `core_export.py`                      | the boundary with `lsh-core`                           |
+| `composer.py`                         | stack JSON semantics and cross-component values        |
+| `render.py`                           | generated files and generated guides                   |
+| `deploy.py`                           | PlatformIO profile planning, USB and MQTT OTA commands |
+| `render_common.py`                    | tiny shared helpers used by CLI/render/deploy          |
+| `bridge_ota_script.py`                | source text for the generated bridge OTA wrapper       |
+| `platformio_bridge_targets_script.py` | source text for generated bridge OTA targets           |
+| `platformio_utils.py`                 | PlatformIO ini parsing and path formatting             |
+| `doctor.py`                           | plain-language diagnostics                             |
+| `scaffold.py`                         | starter project file writing                           |
 
 If a change needs logic from another module, prefer moving a small helper to
 `render_common.py` or `platformio_utils.py` over copy-pasting it.
@@ -48,8 +48,7 @@ If a change needs logic from another module, prefer moving a small helper to
   controller contract exported by `lsh-core`.
 - Generated commands must show the config files they consume. Bridge OTA commands pass
   `--config generated/bridge-ota.json` explicitly.
-- Bridge firmware OTA is MQTT/Homie only. Do not add `espota` paths for bridge
-  firmware.
+- Bridge firmware OTA is MQTT/Homie only. Do not add `espota` paths for bridge firmware.
 - User-facing examples use plain `python` or installed commands. Development-only gates
   may use `uv`.
 - The generator must not copy protocol or OTA implementations from other projects. It
@@ -59,8 +58,8 @@ If a change needs logic from another module, prefer moving a small helper to
 
 ## Test Rules
 
-When changing generator behavior, update or add focused tests in `tests/test_stack_config.py`.
-The minimum gate before handing work back is:
+When changing generator behavior, update or add focused tests in
+`tests/test_stack_config.py`. The minimum gate before handing work back is:
 
 ```bash
 npm run check

@@ -40,6 +40,15 @@ Repositories with Python tools should add:
 
 Use `uv` to keep the Python toolchain locked and reproducible.
 
+The stack composer also exposes a slower real firmware smoke test:
+
+```bash
+npm run smoke:firmware
+```
+
+It builds the release zipapp, creates a clean installation, runs `setup` and therefore
+compiles the starter controller and bridge firmware through PlatformIO.
+
 ## TypeScript Packages
 
 Runtime packages should keep the stricter Node.js gate:

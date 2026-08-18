@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from lsh_stack_config import __version__, cli, scaffold
+from lsh_stack_config import __version__, cli
+from lsh_stack_config.launcher import command_arg
 
 
 def test_package_version_matches_pyproject() -> None:
@@ -22,21 +23,25 @@ def test_package_version_matches_pyproject() -> None:
 def test_lsh_stack_new_uses_zipapp_launcher_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Starter docs should keep working when lsh-stack is a release .pyz file."""
-    archive = tmp_path / "lsh-stack.pyz"
+    archive = tmp_path / "release bundle" / "lsh-stack.pyz"
+    archive.parent.mkdir()
     archive.write_bytes(b"zipapp")
-    project = tmp_path / "installation"
+    project = tmp_path / "home installation"
     monkeypatch.setattr(sys, "argv", [str(archive), "new"])
     monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
-    monkeypatch.setattr(scaffold, "_source_checkout_root", lambda: None)
 
     assert cli.main(["new", str(project)]) == 0
+    output = capsys.readouterr().out
     readme = (project / "README.md").read_text(encoding="utf-8")
     stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
-    assert f"/usr/bin/python3 {archive} setup" in readme
-    assert f"/usr/bin/python3 {archive} status" in readme
-    assert f"/usr/bin/python3 {archive} doctor" in readme
+    launcher = f"{command_arg('/usr/bin/python3')} {command_arg(archive)}"
+    assert f"{launcher} setup" in readme
+    assert f"{launcher} status" in readme
+    assert f"{launcher} doctor" in readme
+    assert f"- cd {command_arg(project)}" in output
     assert "[bridge.defaults.build_flags]" in stack_toml
     assert '# append = ["-Wall"]' in stack_toml
 

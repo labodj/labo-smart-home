@@ -19,7 +19,7 @@ jobs:
   quality:
     name: Documentation and Stack Composer
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout labo-smart-home
@@ -47,6 +47,9 @@ jobs:
 
       - name: Install uv
         run: python3 -m pip install --upgrade pip uv
+
+      - name: Install PlatformIO Core
+        run: python3 -m pip install --upgrade platformio
 
       - name: Cache uv
         uses: actions/cache@v5
@@ -87,49 +90,14 @@ jobs:
 
       - name: Build and smoke-test release zipapp
         working-directory: labo-smart-home
-        run: |
-          mkdir -p dist
-          python -m zipapp src \
-            -m 'lsh_stack_config.cli:entrypoint' \
-            -o dist/lsh-stack.pyz \
-            -p '/usr/bin/env python3'
-          python dist/lsh-stack.pyz --version
-          python dist/lsh-stack.pyz --help
-          tmpdir="$(mktemp -d)"
-          python dist/lsh-stack.pyz new "$tmpdir/installation"
-          grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
-          core_tool="$(pwd)/../lsh-core/tools/generate_lsh_static_config.py"
-          python - "$tmpdir/installation/lsh_stack.toml" "$core_tool" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          core_tool = sys.argv[2]
-          text = path.read_text(encoding="utf-8")
-          text = text.replace(
-              '# tool = "../lsh-core/tools/generate_lsh_static_config.py"',
-              f'tool = "{core_tool}"',
-          )
-          path.write_text(text, encoding="utf-8")
-          PY
-          if python dist/lsh-stack.pyz new "$tmpdir/legacy.toml"; then
-            echo "legacy single-file new target unexpectedly succeeded"
-            exit 1
-          fi
-          python dist/lsh-stack.pyz check --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz status --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz setup --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz new-core "$tmpdir/core-only"
-          test -s "$tmpdir/core-only/lsh_devices.toml"
-          test -s "$tmpdir/core-only/platformio.ini"
-          grep -F "platformio run -e core_panel" "$tmpdir/core-only/README.md"
+        run: npm run smoke:firmware
 
   release:
     name: Publish GitHub Release
     needs: quality
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: write
 
@@ -139,16 +107,13 @@ jobs:
         with:
           path: labo-smart-home
 
-      - name: Checkout lsh-core contract provider
-        uses: actions/checkout@v6
-        with:
-          repository: labodj/lsh-core
-          path: lsh-core
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Install PlatformIO Core
+        run: python3 -m pip install --upgrade platformio
 
       - name: Verify package version matches tag
         working-directory: labo-smart-home
@@ -166,49 +131,9 @@ jobs:
             exit 1
           fi
 
-      - name: Build lsh-stack.pyz
+      - name: Build and smoke-test lsh-stack.pyz
         working-directory: labo-smart-home
-        run: |
-          mkdir -p dist
-          python -m zipapp src \
-            -m 'lsh_stack_config.cli:entrypoint' \
-            -o dist/lsh-stack.pyz \
-            -p '/usr/bin/env python3'
-          chmod +x dist/lsh-stack.pyz
-
-      - name: Smoke-test lsh-stack.pyz
-        working-directory: labo-smart-home
-        run: |
-          python dist/lsh-stack.pyz --version
-          python dist/lsh-stack.pyz --help
-          tmpdir="$(mktemp -d)"
-          python dist/lsh-stack.pyz new "$tmpdir/installation"
-          grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
-          core_tool="$(pwd)/../lsh-core/tools/generate_lsh_static_config.py"
-          python - "$tmpdir/installation/lsh_stack.toml" "$core_tool" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          core_tool = sys.argv[2]
-          text = path.read_text(encoding="utf-8")
-          text = text.replace(
-              '# tool = "../lsh-core/tools/generate_lsh_static_config.py"',
-              f'tool = "{core_tool}"',
-          )
-          path.write_text(text, encoding="utf-8")
-          PY
-          if python dist/lsh-stack.pyz new "$tmpdir/legacy.toml"; then
-            echo "legacy single-file new target unexpectedly succeeded"
-            exit 1
-          fi
-          python dist/lsh-stack.pyz check --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz status --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz setup --config "$tmpdir/installation/lsh_stack.toml"
-          python dist/lsh-stack.pyz new-core "$tmpdir/core-only"
-          test -s "$tmpdir/core-only/lsh_devices.toml"
-          test -s "$tmpdir/core-only/platformio.ini"
-          grep -F "platformio run -e core_panel" "$tmpdir/core-only/README.md"
+        run: ./scripts/build_and_smoke_zipapp.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

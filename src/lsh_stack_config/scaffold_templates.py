@@ -158,7 +158,7 @@ framework = arduino
 board = controllino_maxi
 monitor_speed = 500000
 lib_deps =
-    labodj/lsh-core @ ^3
+    labodj/lsh-core @ ^4
     controllino-plc/CONTROLLINO
 lib_ldf_mode = deep+
 lib_compat_mode = strict
@@ -557,12 +557,9 @@ Run the guided setup from this folder:
 {lsh_stack_command} setup
 ```
 
-It generates `generated/`, checks the stack, creates missing core/bridge project files,
-and, when the PlatformIO CLI is available, builds the starter core project once if
-`lsh-core` has not been installed yet.
-
-If PlatformIO is only available inside VSCode, open `core/` with the PlatformIO
-extension and run `core_panel` -> Build once, then run the same setup command again.
+It creates missing core/bridge project files, generates and checks `generated/`, then
+uses the PlatformIO CLI to build every selected controller and the default bridge
+firmware. Success means the complete default firmware set compiled.
 
 When you are unsure what is already done, ask for the next action:
 
@@ -576,18 +573,11 @@ Use the doctor whenever an edit or generated file feels inconsistent:
 {lsh_stack_command} doctor
 ```
 
-When you intentionally want separated steps after setup has succeeded or after
-the core project has been built once:
+When you intentionally want generation and validation without compiling firmware:
 
 ```bash
 {lsh_stack_command} generate
 {lsh_stack_command} check
-```
-
-Build the default bridge firmware:
-
-```bash
-platformio run -d bridge -e bridge_littlefs
 ```
 
 In VSCode, open `core/` or `bridge/` and use the same environments from PlatformIO

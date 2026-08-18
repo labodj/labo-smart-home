@@ -48,11 +48,10 @@ _CONTEXT_VALUES = {"none", "flow", "global"}
 _NODE_RED_ACTOR_CONTEXT_VALUES = {"flow", "global"}
 _MQTT_CODECS = {"auto", "json", "msgpack"}
 _HOMIE_VERSIONS = {"3", "4", "5"}
-_TRANSPORT_MODES = {"serial_bridge", "onboard_ethernet"}
+_TRANSPORT_MODES = {"serial_bridge"}
 _CLICK_TYPES = {"long", "super_long"}
 _UPLOAD_METHODS = {"usb", "ota"}
-_DEFINE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_PART_COUNT = 2
 _UINT8_MAX = 255
 
@@ -498,7 +497,7 @@ def _parse_defines(table: TomlTable, owner_path: str) -> tuple[DefineOverride, .
     defines: list[DefineOverride] = []
     for name, raw_value in table.items():
         path = f"{owner_path}.defines.{name}"
-        if _DEFINE_NAME_RE.fullmatch(name) is None:
+        if _IDENTIFIER_RE.fullmatch(name) is None:
             _fail(f"{path} must be a valid C/C++ preprocessor define name.")
         value = _define_value(raw_value, path)
         if name == "CONFIG_HOMIE_FIRMWARE_VERSION":
@@ -767,7 +766,7 @@ def _optional_env_var(table: TomlTable, key: str, path: str) -> str | None:
     value = _optional_string(table, key, path)
     if value is None:
         return None
-    if _ENV_VAR_RE.fullmatch(value) is None:
+    if _IDENTIFIER_RE.fullmatch(value) is None:
         _fail(f"{path}.{key} must be a valid environment variable name.")
     return value
 

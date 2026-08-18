@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,7 +19,7 @@ def lsh_stack_command() -> str:
         return "lsh-stack"
     launcher = project / "lsh-stack.py"
     if launcher.is_file():
-        return f"python {_command_arg(launcher)}"
+        return f"python {command_arg(launcher)}"
     return "python -m lsh_stack_config"
 
 
@@ -32,11 +35,10 @@ def _zipapp_command() -> str | None:
     archive = Path(sys.argv[0])
     if archive.suffix != ".pyz" or not archive.is_file():
         return None
-    return f"{_command_arg(Path(sys.executable))} {_command_arg(archive.resolve())}"
+    return f"{command_arg(Path(sys.executable))} {command_arg(archive.resolve())}"
 
 
-def _command_arg(path: Path) -> str:
-    text = str(path)
-    if not text or any(char.isspace() for char in text):
-        return '"' + text.replace('"', '\\"') + '"'
-    return text
+def command_arg(value: str | Path) -> str:
+    """Quote one command argument for the current platform."""
+    text = str(value)
+    return subprocess.list2cmdline([text]) if os.name == "nt" else shlex.quote(text)

@@ -150,20 +150,23 @@ def _help_requested(passthrough: list[str]) -> bool:
     return "-h" in passthrough or "--help" in passthrough
 
 
-def _find_updater_or_none(explicit: Path | None) -> Path | None:
-    candidates = [explicit] if explicit is not None else _candidate_updaters()
+def _updater_candidates(explicit: Path | None) -> list[Path]:
+    return [explicit] if explicit is not None else _candidate_updaters()
+
+
+def _find_updater_or_none(candidates: list[Path]) -> Path | None:
     for candidate in candidates:
-        if candidate is not None and candidate.is_file():
+        if candidate.is_file():
             return candidate.resolve()
     return None
 
 
 def _find_updater(explicit: Path | None) -> Path:
-    candidates = [explicit] if explicit is not None else _candidate_updaters()
-    updater = _find_updater_or_none(explicit)
+    candidates = _updater_candidates(explicit)
+    updater = _find_updater_or_none(candidates)
     if updater is not None:
         return updater
-    searched = "\\n".join(f"- {candidate}" for candidate in candidates if candidate is not None)
+    searched = "\\n".join(f"- {candidate}" for candidate in candidates)
     print(
         "Could not find the homie-esp8266 OTA updater.\\n"
         "Pass --updater /path/to/homie_ota.py. For automation, you may also "
@@ -212,7 +215,7 @@ def _check_python_ota_dependencies(passthrough: list[str]) -> None:
 def main(argv: list[str] | None = None) -> int:
     explicit, config, passthrough = _extract_wrapper_args(sys.argv[1:] if argv is None else argv)
     if _help_requested(passthrough):
-        updater = _find_updater_or_none(explicit)
+        updater = _find_updater_or_none(_updater_candidates(explicit))
         if updater is None:
             _print_wrapper_help()
             return 0

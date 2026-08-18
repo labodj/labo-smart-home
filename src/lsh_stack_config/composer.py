@@ -29,7 +29,6 @@ _TOPIC_SUFFIXES = {
     "events": "events",
     "bridge": "bridge",
 }
-_DEFINE_FLAG_RE = re.compile(r"^-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=.*)?$")
 _DEFINE_VALUE_RE = re.compile(r"^-D\s*([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$")
 _UINT_LITERAL_RE = re.compile(r"^([0-9]+)U?$")
 
@@ -58,11 +57,6 @@ class _WideBridgeFlagState:
 
 def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
     """Return a deployment config ready for bridge, coordinator and Node-RED."""
-    if config.transport.mode != "serial_bridge":
-        raise StackConfigError(
-            "transport.mode = 'onboard_ethernet' is reserved for future bridgeless firmware."
-        )
-
     stack = copy.deepcopy(core_export)
     if not isinstance(stack, dict):
         raise StackConfigError("core export must be a JSON object.")
@@ -284,8 +278,8 @@ def _uint_define_value(value: str | None) -> int | None:
 
 
 def _define_flag_name(flag: str) -> str | None:
-    match = _DEFINE_FLAG_RE.fullmatch(flag.strip())
-    return match.group(1) if match is not None else None
+    parsed = _parse_define_flag(flag)
+    return parsed[0] if parsed is not None else None
 
 
 def _define_override_flag(name: str, value: DefineValue) -> str | None:

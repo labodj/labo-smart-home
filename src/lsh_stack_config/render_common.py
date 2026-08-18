@@ -37,41 +37,28 @@ def bridge_devices(stack: JsonObject) -> JsonObject:
     return json_object(json_object(stack["bridge"])["devices"])
 
 
-def bridge_profiles(config: StackConfig) -> tuple[BridgeProfileSettings, ...]:
-    """Return explicit bridge firmware profiles."""
-    return config.platformio.bridge_profiles
-
-
-def core_profiles(config: StackConfig) -> tuple[CoreProfileSettings, ...]:
-    """Return explicit controller firmware profiles."""
-    return config.platformio.core_profiles
-
-
 def default_core_profile(
     profiles: tuple[CoreProfileSettings, ...],
 ) -> CoreProfileSettings:
-    """Return the profile marked as default, falling back to the first profile."""
-    return next((profile for profile in profiles if profile.default), profiles[0])
+    """Return the profile marked as default."""
+    return next(profile for profile in profiles if profile.default)
 
 
 def default_bridge_profile(
     profiles: tuple[BridgeProfileSettings, ...],
 ) -> BridgeProfileSettings:
-    """Return the profile marked as default, falling back to the first profile."""
-    return next((profile for profile in profiles if profile.default), profiles[0])
+    """Return the profile marked as default."""
+    return next(profile for profile in profiles if profile.default)
 
 
 def profile_key(profile: BridgeProfileSettings | CoreProfileSettings) -> str:
     """Return the stable deploy-plan key for a firmware profile."""
-    return profile.name or "default"
+    return profile.name
 
 
 def bridge_build_env(config: StackConfig, profile: BridgeProfileSettings) -> str:
     """Return the PlatformIO build environment name for a bridge profile."""
-    pieces = [slug(config.platformio.bridge_env_prefix)]
-    if profile.name:
-        pieces.append(slug(profile.name))
-    return "_".join(pieces)
+    return "_".join((slug(config.platformio.bridge_env_prefix), slug(profile.name)))
 
 
 def core_build_env(config: StackConfig, device: str, profile: CoreProfileSettings) -> str:

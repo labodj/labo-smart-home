@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 
 from .errors import StackConfigError
-from .launcher import lsh_stack_command, source_checkout_root
+from .launcher import command_arg, lsh_stack_command
 from .models import StackConfig
 from .platformio_utils import path_for_platformio
 from .render_common import env_name
@@ -65,7 +65,7 @@ def write_core_starter(path: Path, *, force: bool) -> int:
 
     sys.stdout.write(f"created standalone LSH core project at {path}\n")
     sys.stdout.write("next commands:\n")
-    sys.stdout.write(f"- cd {path}\n")
+    sys.stdout.write(f"- cd {command_arg(path)}\n")
     sys.stdout.write("- platformio run -e core_panel\n")
     return 0
 
@@ -224,16 +224,12 @@ def _bridge_project_files(*, bridge_project: Path, generated_dir: Path) -> dict[
 def _print_next_steps(path: Path, lsh_stack_command: str) -> None:
     sys.stdout.write(f"created starter LSH project at {path}\n")
     sys.stdout.write("next commands:\n")
-    sys.stdout.write(f"- cd {path}\n")
+    sys.stdout.write(f"- cd {command_arg(path)}\n")
     sys.stdout.write(f"- {lsh_stack_command} setup\n")
     sys.stdout.write(
-        "If PlatformIO is only available inside VSCode, open core/ and build "
-        f"core_panel once from Project Tasks, then run `{lsh_stack_command} setup` again.\n"
+        "Setup requires PlatformIO Core in this shell: "
+        "https://docs.platformio.org/en/latest/core/installation/\n"
     )
-
-
-def _source_checkout_root() -> Path | None:
-    return source_checkout_root()
 
 
 def _conflict_message(label: str, conflicts: list[Path]) -> str:

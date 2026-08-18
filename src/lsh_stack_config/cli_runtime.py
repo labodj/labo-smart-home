@@ -12,9 +12,12 @@ from pathlib import Path
 
 from .commands import stack_command
 from .errors import StackConfigError
+from .launcher import command_arg
 from .models import StackConfig
 from .paths import display_path
 from .platformio_utils import read_platformio_config, section_refs
+
+PLATFORMIO_INSTALL_URL = "https://docs.platformio.org/en/latest/core/installation/"
 
 
 def bootstrap_core_project(config: StackConfig) -> int:
@@ -23,17 +26,13 @@ def bootstrap_core_project(config: StackConfig) -> int:
     platformio = platformio_invocation()
     if platformio is None:
         setup_command = _setup_command(config)
-        envs = default_platformio_envs(project)
-        env_text = ", ".join(envs) if envs else "the default core environment"
         sys.stderr.write(
             "lsh-stack setup cannot install lsh-core because the PlatformIO CLI "
             "is not available in this shell.\n"
-            "Choose one path:\n"
-            f"- Install the PlatformIO CLI, then run: {setup_command}\n"
-            f"- Or open {project} in VSCode with the PlatformIO extension, build "
-            f"{env_text}, then run: {setup_command}\n"
+            f"Install PlatformIO Core ({PLATFORMIO_INSTALL_URL}), then run:\n"
+            f"  {setup_command}\n"
             "Why: the first core build downloads lsh-core and exposes the stack "
-            "config generator used by lsh-stack.\n"
+            "config generator; setup then compiles every selected firmware.\n"
         )
         return 1
 
@@ -89,9 +88,8 @@ def required_platformio_invocation(*, dry_run: bool) -> list[str]:
     if dry_run:
         return ["platformio"]
     raise StackConfigError(
-        "PlatformIO CLI is required because lsh-stack ota builds the bridge firmware first. "
-        "Use --dry-run to inspect commands, install the PlatformIO CLI, or build/upload "
-        "from VSCode PlatformIO Project Tasks."
+        "PlatformIO CLI is required to build firmware. Install PlatformIO Core from "
+        f"{PLATFORMIO_INSTALL_URL}; OTA commands can use --dry-run to inspect commands."
     )
 
 
@@ -154,7 +152,9 @@ def default_platformio_envs(project: Path) -> list[str]:
 
 def format_command(command: list[str]) -> str:
     """Return a readable command line for status and dry-run output."""
-    return " ".join(_format_command_arg(index, arg) for index, arg in enumerate(command))
+    return " ".join(
+        command_arg(_format_command_arg(index, arg)) for index, arg in enumerate(command)
+    )
 
 
 def _setup_command(config: StackConfig) -> str:

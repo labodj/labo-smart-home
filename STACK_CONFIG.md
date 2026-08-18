@@ -141,9 +141,7 @@ service_topic = "LSH/Node-RED/SRV"
 `core.devices` points to the controller TOML. If the `lsh-core` generator is not next to
 your project, set `core.tool` or the `LSH_CORE_TOOL` environment variable.
 
-`transport.mode = "serial_bridge"` is the supported public stack today. The schema
-reserves `onboard_ethernet` for a future bridgeless controller profile, but the composer
-fails clearly until that firmware path exists.
+`transport.mode` currently supports `"serial_bridge"`.
 
 `mqtt.codec` controls the MQTT-facing payload codec. This is where heterogeneous mode
 lives: the controller can use serial MsgPack while MQTT, the coordinator and Node-RED

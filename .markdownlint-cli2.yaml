@@ -17,6 +17,7 @@ globs:
   - "README.md"
   - "DOCS.md"
   - "FAQ.md"
+  - "GENERATOR_ARCHITECTURE.md"
   - "GETTING_STARTED.md"
   - "GLOSSARY.md"
   - "HARDWARE_OVERVIEW.md"
