@@ -39,9 +39,12 @@ place.
 These are generic Homie projects, not LSH components. Add them only when you want Home
 Assistant MQTT discovery from Homie metadata.
 
-Maintained infrastructure forks are available when needed, but they are supporting code
-rather than starting points: [`homie-esp8266`](https://github.com/labodj/homie-esp8266)
-and [`async-mqtt-client`](https://github.com/labodj/async-mqtt-client).
+Supporting infrastructure includes the maintained
+[`homie-esp8266`](https://github.com/labodj/homie-esp8266) fork, published as
+`labodj/homie-v5`, and its upstream
+[`bertmelis/espMqttClient`](https://github.com/bertmelis/espMqttClient) backend. The old
+[`async-mqtt-client`](https://github.com/labodj/async-mqtt-client) fork remains
+available only for historical-release compatibility.
 
 ## First Lab Path
 

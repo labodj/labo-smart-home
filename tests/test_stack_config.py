@@ -18,6 +18,7 @@ from lsh_stack_config.launcher import command_arg
 from lsh_stack_config.models import JsonObject, StackConfig
 from lsh_stack_config.parser import load_stack_config
 from lsh_stack_config.render import write_output_tree
+from lsh_stack_config.scaffold_templates import CORE_BOOTSTRAP_SCRIPT_TEMPLATE
 
 
 def test_lsh_stack_entrypoint_preserves_error_exit_code(
@@ -313,7 +314,8 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     assert 'Path("scripts") / "homie_ota.py"' in ota_script_text
     assert "ota_updater.py" not in ota_script_text
     assert "def _prompt_for_password_env" in ota_script_text
-    assert "def _check_python_ota_dependencies" in ota_script_text
+    assert "def _compatible_paho_available" in ota_script_text
+    assert "def _updater_command" in ota_script_text
     assert "def _print_wrapper_help" in ota_script_text
     assert 'root / "bridge" / ".pio" / "libdeps"' in ota_script_text
     assert "paho-mqtt" in ota_script_text
@@ -322,8 +324,9 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     assert "updater = _find_updater_or_none(candidates)" in ota_script_text
     assert "_find_updater_or_none(explicit)" not in ota_script_text
     assert "MQTT/OTA password" in ota_script_text
+    assert 'PAHO_REQUIREMENT = "paho-mqtt>=2.1,<3"' in ota_script_text
+    assert '"--no-project"' in ota_script_text
     assert "subprocess.run(" in ota_script_text
-    assert "[sys.executable, str(updater), *passthrough]" in ota_script_text
     help_result = subprocess.run(  # noqa: S603 - generated tmp_path script under test.
         [sys.executable, str(ota_script), "--help"],
         cwd=tmp_path,
@@ -358,6 +361,69 @@ def test_stack_config_writes_typed_mqtt_ota_command(tmp_path: Path) -> None:
     assert " ota\n" in generated_readme
     assert stack_export["deploy"]["bridge"]["ota"]["brokerPasswordEnv"] == "LSH_OTA_PASSWORD"
     assert stack_export["deploy"]["bridge"]["ota"]["baseTopic"] is None
+
+
+def test_generated_ota_wrapper_help_is_offline_and_uv_supplies_paho(tmp_path: Path) -> None:
+    """Wrapper help is dependency-free and uv supplies Paho when Python cannot."""
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [deploy.bridge.ota]
+        broker_host = "mqtt.lan"
+        """,
+    )
+    config = load_stack_config(config_path)
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, compose_stack(config, _core_export()))
+    ota_script = output_dir / "bridge-ota.py"
+    fake_updater = tmp_path / "fake_homie_ota.py"
+    fake_updater.write_text("raise SystemExit(99)\n", encoding="utf-8")
+
+    help_result = subprocess.run(  # noqa: S603 - generated tmp_path script under test.
+        [sys.executable, str(ota_script), "--updater", str(fake_updater), "--help"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert help_result.returncode == 0
+    assert "Generated LSH bridge OTA wrapper." in help_result.stdout
+
+    uv_args = tmp_path / "uv-args.txt"
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$UV_ARGS_FILE"\n', encoding="utf-8")
+    fake_uv.chmod(0o755)
+    uv_result = subprocess.run(  # noqa: S603 - generated tmp_path script under test.
+        [
+            sys.executable,
+            "-S",
+            str(ota_script),
+            "--updater",
+            str(fake_updater),
+            "--device-id",
+            "panel",
+            "firmware.bin",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "UV_ARGS_FILE": str(uv_args)},
+    )
+    assert uv_result.returncode == 0, uv_result.stderr
+    assert uv_args.read_text(encoding="utf-8").splitlines() == [
+        "run",
+        "--no-project",
+        "--with",
+        "paho-mqtt>=2.1,<3",
+        str(fake_updater),
+        "--device-id",
+        "panel",
+        "firmware.bin",
+    ]
 
 
 def test_generated_readme_uses_zipapp_launcher_for_stack_ota(
@@ -636,6 +702,31 @@ def test_stack_config_uses_environment_core_tool_for_platformio_script(
     core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
     assert "pre:../lsh-core/tools/platformio_lsh_static_config.py" in core_ini
     assert ".pio/libdeps/core_panel/lsh-core/tools/platformio_lsh_static_config.py" not in core_ini
+
+
+def test_stack_config_uses_core_project_bootstrap_when_available(tmp_path: Path) -> None:
+    """Generated environments keep working with release and symlinked libraries."""
+    core_project = tmp_path / "core"
+    bootstrap = core_project / "scripts" / "lsh_core_bootstrap.py"
+    bootstrap.parent.mkdir(parents=True)
+    bootstrap.write_text("", encoding="utf-8")
+    config_path = _write_stack_config(
+        tmp_path,
+        """
+        [core]
+        devices = "lsh_devices.toml"
+
+        [platformio]
+        core_project = "core"
+        """,
+    )
+    config = load_stack_config(config_path)
+
+    output_dir = tmp_path / "generated"
+    write_output_tree(output_dir, config, compose_stack(config, _starter_core_export()))
+
+    core_ini = (output_dir / "platformio-core.ini").read_text(encoding="utf-8")
+    assert "extra_scripts = pre:scripts/lsh_core_bootstrap.py" in core_ini
 
 
 def test_stack_config_writes_core_profiles_for_each_device(tmp_path: Path) -> None:
@@ -1069,6 +1160,33 @@ def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> N
     assert "point `[core].devices`" in readme
 
 
+def test_core_bootstrap_follows_platformio_symlink_dependency(tmp_path: Path) -> None:
+    """The pre-build hook resolves PlatformIO's .pio-link local-library marker."""
+    project = tmp_path / "installation" / "core"
+    hook = tmp_path / "lsh-core" / "tools" / "platformio_lsh_static_config.py"
+    hook.parent.mkdir(parents=True)
+    hook.write_text("bootstrap_hook_ran = True\n", encoding="utf-8")
+    marker = project / ".pio" / "libdeps" / "core_panel" / "lsh-core.pio-link"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "cwd": str(project),
+                "spec": {"uri": "symlink://../../lsh-core"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    fake_env = SimpleNamespace(
+        subst=lambda value: {"$PROJECT_DIR": str(project), "$PIOENV": "core_panel"}[value]
+    )
+    namespace = {"Import": lambda _name: None, "env": fake_env}
+
+    exec(CORE_BOOTSTRAP_SCRIPT_TEMPLATE, namespace)  # noqa: S102 - generated hook under test.
+
+    assert namespace["bootstrap_hook_ran"] is True
+
+
 @pytest.mark.parametrize("command", ["new", "new-core"])
 def test_lsh_stack_new_commands_reject_legacy_toml_targets(
     tmp_path: Path,
@@ -1413,7 +1531,11 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     assert (core_project / "scripts" / "lsh_core_bootstrap.py").is_file()
     assert (core_project / "src" / "main.cpp").is_file()
     assert (core_project / "include" / "lsh_etl_profile_override.h").is_file()
-    assert (tmp_path / "lsh-bridge-personal" / "platformio.ini").is_file()
+    bridge_ini = (tmp_path / "lsh-bridge-personal" / "platformio.ini").read_text(encoding="utf-8")
+    assert "version = 2" in bridge_ini
+    assert "ESP32Async/AsyncTCP @ ^3.5.0" in bridge_ini
+    assert "labodj/homie-v5 @ ^4.0.0" in bridge_ini
+    assert "labodj/lsh-bridge @ ^1.8.0" in bridge_ini
     assert (tmp_path / "lsh-bridge-personal" / "src" / "main.cpp").is_file()
     assert (stack_project / "overrides" / "README.md").is_file()
     generated_readme = (stack_project / "generated" / "README.generated.md").read_text(
@@ -1664,7 +1786,7 @@ def test_lsh_stack_new_supports_documented_first_use_without_sibling_repos(
     assert cli.main(["generate"]) == 0
 
     generated_core = (project / "generated" / "platformio-core.ini").read_text(encoding="utf-8")
-    assert "extra_scripts = pre:.pio/libdeps/core_panel/lsh-core/tools" in generated_core
+    assert "extra_scripts = pre:scripts/lsh_core_bootstrap.py" in generated_core
     assert "custom_lsh_config = lsh_devices.toml" in generated_core
     generated_bridge = (project / "generated" / "platformio-bridge.ini").read_text(encoding="utf-8")
     assert "[env:bridge_littlefs_debug]" in generated_bridge

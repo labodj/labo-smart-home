@@ -926,6 +926,11 @@ def _core_static_config_script_path(config: StackConfig, env_name: str) -> str:
         script = Path(env_tool).expanduser().resolve().parent / "platformio_lsh_static_config.py"
         return path_for_platformio(script, config.platformio.core_project)
 
+    if config.platformio.core_project is not None:
+        bootstrap = config.platformio.core_project / "scripts" / "lsh_core_bootstrap.py"
+        if bootstrap.is_file():
+            return path_for_platformio(bootstrap, config.platformio.core_project)
+
     return f".pio/libdeps/{env_name}/lsh-core/tools/platformio_lsh_static_config.py"
 
 

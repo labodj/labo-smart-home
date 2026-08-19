@@ -17,9 +17,9 @@ usually with ``--config generated/bridge-ota.json``.
 from __future__ import annotations
 
 import getpass
-import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +27,7 @@ from pathlib import Path
 
 UPDATER_ENV = "LSH_HOMIE_OTA_UPDATER"
 UPDATER_RELATIVE_PATH = Path("scripts") / "homie_ota.py"
+PAHO_REQUIREMENT = "paho-mqtt>=2.1,<3"
 
 
 def _extract_wrapper_args(argv: list[str]) -> tuple[Path | None, Path | None, list[str]]:
@@ -191,22 +192,40 @@ def _print_wrapper_help() -> None:
     )
 
 
-def _module_available(name: str) -> bool:
+def _compatible_paho_available() -> bool:
     try:
-        return importlib.util.find_spec(name) is not None
-    except ModuleNotFoundError:
+        from importlib.metadata import PackageNotFoundError, version
+
+        from paho.mqtt.enums import CallbackAPIVersion
+        version_parts = version("paho-mqtt").split(".")
+    except (ImportError, PackageNotFoundError):
         return False
+    return (
+        hasattr(CallbackAPIVersion, "VERSION2")
+        and len(version_parts) >= 2
+        and version_parts[0] == "2"
+        and version_parts[1].isdigit()
+        and int(version_parts[1]) >= 1
+    )
 
 
-def _check_python_ota_dependencies(passthrough: list[str]) -> None:
-    if _help_requested(passthrough):
-        return
-    if _module_available("paho.mqtt"):
-        return
-    requirement = "paho-mqtt>=1.6,<3"
+def _updater_command(updater: Path, passthrough: list[str]) -> list[str]:
+    if _compatible_paho_available():
+        return [sys.executable, str(updater), *passthrough]
+    uv = shutil.which("uv")
+    if uv is not None:
+        return [
+            uv,
+            "run",
+            "--no-project",
+            "--with",
+            PAHO_REQUIREMENT,
+            str(updater),
+            *passthrough,
+        ]
     print(
-        "Missing Python dependency `paho-mqtt` for the Homie OTA updater. "
-        f"Install it with `{sys.executable} -m pip install '{requirement}'`.",
+        f"The Homie OTA updater requires `{PAHO_REQUIREMENT}`. Install uv, or "
+        f"install it with `{sys.executable} -m pip install '{PAHO_REQUIREMENT}'`.",
         file=sys.stderr,
     )
     raise SystemExit(2)
@@ -215,19 +234,12 @@ def _check_python_ota_dependencies(passthrough: list[str]) -> None:
 def main(argv: list[str] | None = None) -> int:
     explicit, config, passthrough = _extract_wrapper_args(sys.argv[1:] if argv is None else argv)
     if _help_requested(passthrough):
-        updater = _find_updater_or_none(_updater_candidates(explicit))
-        if updater is None:
-            _print_wrapper_help()
-            return 0
-        return subprocess.run(
-            [sys.executable, str(updater), *passthrough],
-            check=False,
-        ).returncode
+        _print_wrapper_help()
+        return 0
     _prompt_for_password_env(config, passthrough)
     updater = _find_updater(explicit)
-    _check_python_ota_dependencies(passthrough)
     return subprocess.run(
-        [sys.executable, str(updater), *passthrough],
+        _updater_command(updater, passthrough),
         check=False,
     ).returncode
 

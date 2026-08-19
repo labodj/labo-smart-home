@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-TEMPLATE_VERSION = 1
+TEMPLATE_VERSION = 2
 
 STACK_TEMPLATE = """#:schema https://raw.githubusercontent.com/labodj/labo-smart-home/main/schemas/lsh_stack.schema.json
 
@@ -246,7 +246,9 @@ monitor_speed = 500000
 lib_ldf_mode = deep
 lib_compat_mode = strict
 lib_deps =
-    labodj/lsh-bridge @ ^1
+    ESP32Async/AsyncTCP @ ^3.5.0
+    labodj/homie-v5 @ ^4.0.0
+    labodj/lsh-bridge @ ^1.8.0
 build_unflags =
     -std=gnu++11 -std=gnu++17 -std=gnu++20 -std=gnu++23
 build_flags =
@@ -428,9 +430,25 @@ CORE_BOOTSTRAP_SCRIPT_TEMPLATE = """\
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 Import(\"env\")
+
+
+def _linked_script(marker: Path) -> Path | None:
+    try:
+        link = json.loads(marker.read_text(encoding=\"utf-8\"))
+        uri = link.get(\"spec\", {}).get(\"uri\")
+        cwd = link.get(\"cwd\")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(uri, str) or not uri.startswith(\"symlink://\"):
+        return None
+    root = Path(uri.removeprefix(\"symlink://\"))
+    if not root.is_absolute():
+        root = Path(cwd) / root if isinstance(cwd, str) else marker.parent / root
+    return root / \"tools\" / \"platformio_lsh_static_config.py\"
 
 
 def _candidate_scripts() -> list[Path]:
@@ -439,6 +457,9 @@ def _candidate_scripts() -> list[Path]:
     libdeps = project_dir / \".pio\" / \"libdeps\"
     exact = libdeps / pioenv / \"lsh-core\" / \"tools\" / \"platformio_lsh_static_config.py\"
     candidates = [exact]
+    linked = _linked_script(libdeps / pioenv / \"lsh-core.pio-link\")
+    if linked is not None:
+        candidates.append(linked)
     if libdeps.is_dir():
         candidates.extend(
             sorted(libdeps.glob(\"*/lsh-core/tools/platformio_lsh_static_config.py\"))

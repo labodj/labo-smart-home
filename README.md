@@ -43,6 +43,12 @@ necessary for any PlatformIO dependency deliberately declared with a Git URL.
 The two files normally edited by an installation owner are `core/lsh_devices.toml` and
 `lsh_stack.toml`. Generated files stay under `generated/`.
 
+To update an existing installation after a `labo-smart-home` release, download the
+launcher again to replace `lsh-stack.pyz`, then run `python lsh-stack.pyz setup` from
+the installation root. `setup` refreshes generated files and verifies all firmware, but
+does not overwrite persistent `core/` or `bridge/` project files; merge any
+template-version warning into those files deliberately.
+
 ## What LSH Is
 
 LSH is a reference stack for wired home automation. A Controllino controller keeps local
@@ -140,8 +146,10 @@ rather than starting points. The
 [`homie-esp8266`](https://github.com/labodj/homie-esp8266) fork is published as
 [`labodj/homie-v5`](https://registry.platformio.org/libraries/labodj/homie-v5) for
 ESP8266/ESP32 Arduino projects that need Homie 3.0.1 compatibility plus opt-in Homie
-v4/v5 discovery modes. The MQTT client fork lives at
-[`async-mqtt-client`](https://github.com/labodj/async-mqtt-client).
+v4/v5 discovery modes. Current releases use the maintained
+[`bertmelis/espMqttClient`](https://github.com/bertmelis/espMqttClient) backend. The old
+[`async-mqtt-client`](https://github.com/labodj/async-mqtt-client) fork remains on
+GitHub only for compatibility with historical releases.
 
 ## Runtime Shape
 
