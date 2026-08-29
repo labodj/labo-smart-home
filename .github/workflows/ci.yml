@@ -23,25 +23,25 @@ jobs:
 
     steps:
       - name: Checkout labo-smart-home
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: labo-smart-home
 
       - name: Checkout lsh-core contract provider
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: labodj/lsh-core
           path: lsh-core
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "lts/*"
           cache: npm
           cache-dependency-path: labo-smart-home/package-lock.json
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -52,7 +52,7 @@ jobs:
         run: python3 -m pip install --upgrade platformio
 
       - name: Cache uv
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/uv
           key: ${{ runner.os }}-uv-${{ hashFiles('labo-smart-home/uv.lock') }}
@@ -103,12 +103,12 @@ jobs:
 
     steps:
       - name: Checkout labo-smart-home
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: labo-smart-home
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
