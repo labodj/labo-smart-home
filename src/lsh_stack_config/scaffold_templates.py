@@ -247,8 +247,8 @@ lib_ldf_mode = deep
 lib_compat_mode = strict
 lib_deps =
     ESP32Async/AsyncTCP @ ^3.5.0
-    labodj/homie-v5 @ ^4.0.0
-    labodj/lsh-bridge @ ^1.8.0
+    labodj/homie-v5 @ ^4.0.1
+    labodj/lsh-bridge @ ^1.8.1
 build_unflags =
     -std=gnu++11 -std=gnu++17 -std=gnu++20 -std=gnu++23
 build_flags =

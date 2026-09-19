@@ -1534,8 +1534,8 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     bridge_ini = (tmp_path / "lsh-bridge-personal" / "platformio.ini").read_text(encoding="utf-8")
     assert "version = 2" in bridge_ini
     assert "ESP32Async/AsyncTCP @ ^3.5.0" in bridge_ini
-    assert "labodj/homie-v5 @ ^4.0.0" in bridge_ini
-    assert "labodj/lsh-bridge @ ^1.8.0" in bridge_ini
+    assert "labodj/homie-v5 @ ^4.0.1" in bridge_ini
+    assert "labodj/lsh-bridge @ ^1.8.1" in bridge_ini
     assert (tmp_path / "lsh-bridge-personal" / "src" / "main.cpp").is_file()
     assert (stack_project / "overrides" / "README.md").is_file()
     generated_readme = (stack_project / "generated" / "README.generated.md").read_text(
