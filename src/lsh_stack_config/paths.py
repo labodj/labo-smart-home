@@ -5,6 +5,23 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .errors import StackConfigError
+
+
+def stack_config_path(explicit: Path | None) -> Path:
+    """Prefer an explicit config; otherwise find the nearest installation root."""
+    if explicit is not None:
+        return absolute_path(explicit)
+    current = Path.cwd()
+    for directory in (current, *current.parents):
+        candidate = directory / "lsh_stack.toml"
+        if candidate.is_file():
+            return candidate
+    raise StackConfigError(
+        "cannot find lsh_stack.toml here or in a parent directory; "
+        "enter your stack directory or pass --config PATH. Start with new PROJECT_DIR."
+    )
+
 
 def absolute_path(path: Path) -> Path:
     """Return an absolute path without resolving symlinks."""

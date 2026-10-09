@@ -297,9 +297,15 @@ def render_bridge_ota_config(config: StackConfig) -> JsonObject:
     _set_if_not_none(broker, "username_env", ota.broker_username_env)
     _set_if_not_none(broker, "password", ota.broker_password)
     _set_if_not_none(broker, "password_env", ota.broker_password_env)
-    _set_if_not_none(broker, "tls_cacert", ota.broker_tls_cacert)
-    _set_if_not_none(broker, "tls_certfile", ota.broker_tls_certfile)
-    _set_if_not_none(broker, "tls_keyfile", ota.broker_tls_keyfile)
+    # Resolve relative certificate paths once, so OTA/diagnostics work from core/
+    # and bridge/ as well as the installation root.
+    for key, value in (
+        ("tls_cacert", ota.broker_tls_cacert),
+        ("tls_certfile", ota.broker_tls_certfile),
+        ("tls_keyfile", ota.broker_tls_keyfile),
+    ):
+        if value is not None:
+            broker[key] = str(config.path.parent / Path(value).expanduser())
     if ota.broker_tls_insecure:
         broker["tls_insecure"] = True
 

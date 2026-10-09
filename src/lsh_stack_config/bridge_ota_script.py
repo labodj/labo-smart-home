@@ -185,7 +185,7 @@ def _print_wrapper_help() -> None:
         "--device-id DEVICE firmware\\n\\n"
         "Generated LSH bridge OTA wrapper.\\n\\n"
         "Normal use:\\n"
-        "  lsh-stack ota [device...]\\n\\n"
+        "  lsh-stack ota DEVICE... (or --all)\\n\\n"
         "The upstream Homie OTA updater is loaded from the bridge project's "
         "PlatformIO libdeps after the bridge project has been built once. "
         f"You can also pass --updater PATH or set {UPDATER_ENV}."

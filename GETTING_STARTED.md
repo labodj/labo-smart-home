@@ -197,7 +197,7 @@ When using the single-file `lsh-stack.pyz` launcher from a GitHub Release, run t
 command through Python:
 
 ```bash
-python /path/to/lsh-stack.pyz setup
+python lsh-stack.pyz setup
 ```
 
 When working from a checkout and `lsh-stack` is not installed, use:
@@ -217,7 +217,9 @@ platformio run -e core_panel
 `setup` creates missing core/bridge PlatformIO project shells without overwriting
 existing files, generates and checks the stack, then compiles every selected controller
 and the default bridge firmware. It reports success only after the complete default
-firmware set builds. PlatformIO must therefore be available to the shell running setup.
+firmware set builds. PlatformIO installed by VSCode is detected even when it is absent
+from the shell PATH. No device is flashed. Rename the example device before setup if
+needed; the dependency bootstrap does not compile the placeholder device.
 
 When you are unsure about the current state, run:
 
@@ -228,7 +230,7 @@ lsh-stack status
 With the single-file launcher:
 
 ```bash
-python /path/to/lsh-stack.pyz status
+python lsh-stack.pyz status
 ```
 
 The expert commands remain available when you intentionally want each step separated:
@@ -255,15 +257,26 @@ the stack CLI:
 ```bash
 lsh-stack ota panel
 lsh-stack ota panel lights
-lsh-stack ota
+lsh-stack ota --all
 ```
 
 The last command builds the default bridge profile and updates every configured bridge.
+Bare `ota` is rejected. Use `--debug` to keep the currently selected filesystem family.
 If a prerequisite is missing, the command exits with the install command to run.
 
 The generated files give you bridge PlatformIO flags, controller and bridge
 environments, coordinator `systemConfig`, Node-RED `lsh-logic` settings and exact
 build/upload commands derived from the same controller profile.
+
+For assisted creation, use `new PROJECT_DIR --interactive`; it asks for supported
+hardware, names and MQTT settings without guessing wiring. A release zipapp copies
+itself into the installation, so the examples above no longer depend on its download
+location. See [Daily Operations](./STACK_CONFIG.md#daily-operations) for build/monitor,
+passive diagnostics, local-development switching and safe template updates.
+
+Import `generated/node-red-flow.json` in Node-RED, choose the same broker in both MQTT
+nodes, and review the disabled flow before enabling/deploying it. Do not leave a second
+coordinator active for the same devices.
 
 If generation fails, run:
 

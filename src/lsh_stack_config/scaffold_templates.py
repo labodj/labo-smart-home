@@ -12,8 +12,7 @@ schema_version = 1
 # Core topology lives in the controller PlatformIO project. lsh-stack reads it
 # from here, then writes generated PlatformIO fragments under ./generated.
 devices = "core/lsh_devices.toml"
-# For local lsh-core development, uncomment this and point it at the checkout.
-# tool = "../lsh-core/tools/generate_lsh_static_config.py"
+# Switch local development on/off with `dev local` / `dev release`.
 
 [transport]
 mode = "serial_bridge"
@@ -24,24 +23,8 @@ lsh_base_path = "LSH/"
 homie_base_path = "homie/5/"
 service_topic = "LSH/Node-RED/SRV"
 
-[coordinator]
-click_timeout = "2s"
-click_cleanup_interval = "30s"
-watchdog_interval = "60s"
-interrogate_threshold = "120s"
-ping_timeout = "3s"
-initial_state_timeout = "2s"
-other_devices_prefix = "other_devices"
-# other_actors_topic = "home/lsh/other-actors"
-
-[node_red]
-expose_state_context = "global"
-expose_state_key = "lsh_state"
-export_topics = "flow"
-export_topics_key = "lsh_topics"
-expose_config_context = "global"
-expose_config_key = "lsh_config"
-other_actors_context = "global"
+# Coordinator timing and Node-RED contexts use their documented defaults.
+# Advanced options: STACK_CONFIG.md in the labo-smart-home repository.
 
 [platformio]
 core_project = "core"
@@ -150,6 +133,7 @@ default_envs = core_panel
 ; Optional stack overlay. If this generated file is missing, the standalone
 ; environment declared below still builds from lsh_devices.toml.
 extra_configs = ../generated/platformio-core.ini
+    platformio.local*.ini
 build_cache_dir = ./.build_cache
 
 [common_base]
@@ -235,6 +219,7 @@ default_envs = bridge_littlefs
 ; Optional stack overlay. If this generated file is missing, the standalone
 ; environments declared below still build from the local wide bridge profile.
 extra_configs = ../generated/platformio-bridge.ini
+    platformio.local*.ini
 build_cache_dir = ./.build_cache
 
 [env]
@@ -572,7 +557,8 @@ Do not edit files under `generated/`; they are recreated from the TOML files.
 
 ## First Setup
 
-Run the guided setup from this folder:
+Check the device names and actual I/O pins in `core/lsh_devices.toml` first.
+Then run setup from this folder:
 
 ```bash
 {lsh_stack_command} setup
@@ -581,6 +567,7 @@ Run the guided setup from this folder:
 It creates missing core/bridge project files, generates and checks `generated/`, then
 uses the PlatformIO CLI to build every selected controller and the default bridge
 firmware. Success means the complete default firmware set compiled.
+Nothing is flashed. PlatformIO installed by the VSCode extension is detected automatically.
 
 When you are unsure what is already done, ask for the next action:
 
@@ -604,6 +591,38 @@ When you intentionally want generation and validation without compiling firmware
 In VSCode, open `core/` or `bridge/` and use the same environments from PlatformIO
 Project Tasks. The local projects stay buildable without `generated/`; stack files are
 an overlay for richer fleet workflows.
+
+## Daily Commands
+
+```bash
+{lsh_stack_command} core list
+{lsh_stack_command} core build --all
+{lsh_stack_command} bridge build --debug
+{lsh_stack_command} bridge upload panel --port /dev/ttyUSB0
+{lsh_stack_command} bridge monitor panel --port /dev/ttyUSB0
+{lsh_stack_command} ota panel --dry-run
+{lsh_stack_command} ota --all
+{lsh_stack_command} dev local
+{lsh_stack_command} dev release
+{lsh_stack_command} templates diff
+{lsh_stack_command} templates apply
+```
+
+Replace `panel` and the serial port with your real device. OTA requires the first USB
+flash, Homie/Wi-Fi provisioning, and `[deploy.bridge.ota]` in `lsh_stack.toml`.
+`--debug` preserves the selected bridge family; migration profiles must be explicit.
+Commands find the installation from subdirectories; use `../lsh-stack.pyz` from `core/`
+or `bridge/` when using the copied zipapp. `--config` always takes precedence.
+
+For Node-RED import `generated/node-red-flow.json`, select a broker in both MQTT nodes,
+review the disabled flow, then enable/deploy it manually. See `generated/node-red-setup.md`.
+Never run two coordinators for the same devices.
+
+To update the stack tool, replace this installation's `lsh-stack.pyz` with the new release,
+run `templates diff`, `templates apply`, then `setup`. Customized files are preserved;
+automatically updated files have backups under `.lsh-stack/backups/`.
+See the [configuration reference](https://github.com/labodj/labo-smart-home/blob/main/STACK_CONFIG.md)
+for advanced timing, profiles, typed defines and network-click mappings.
 
 On Windows, use `py` instead of `python` in the commands above if that is how Python is
 installed.

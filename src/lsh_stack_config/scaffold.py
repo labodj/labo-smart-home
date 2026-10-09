@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tomllib
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from .errors import StackConfigError
 from .launcher import command_arg, lsh_stack_command
 from .models import StackConfig
+from .parser import load_stack_config
 from .platformio_utils import path_for_platformio
 from .render_common import env_name
 from .scaffold_templates import (
@@ -26,24 +28,42 @@ from .scaffold_templates import (
     PROJECT_README_TEMPLATE,
     STACK_TEMPLATE,
 )
+from .template_updates import MANIFEST, _safe_path, record_templates
+from .wizard import interactive_config
 
 GENERATED_DIR_NAME = "generated"
 
 
-def write_starter(path: Path, *, force: bool) -> int:
+def write_starter(path: Path, *, force: bool, interactive: bool = False) -> int:
     """Write a complete starter project."""
     _validate_project_dir(path, command="lsh-stack new")
     command = lsh_stack_command()
+    archive = Path(sys.argv[0]).absolute()
+    local_archive = path / "lsh-stack.pyz"
+    if archive.suffix == ".pyz" and archive.is_file():
+        command = "python lsh-stack.pyz"
     files = _starter_files(path, command)
+    for target in (*files, local_archive, path / MANIFEST):
+        _safe_path(path, target)
     conflicts = [target for target in files if target.exists() and not force]
     if conflicts:
         raise StackConfigError(_conflict_message("starter files", conflicts))
+    if command == "python lsh-stack.pyz" and local_archive.exists() and not force:
+        raise StackConfigError(f"launcher already exists: {local_archive}; refusing to replace it")
+    if interactive:
+        stack, devices = interactive_config()
+        files[path / "lsh_stack.toml"] = stack
+        files[path / "core/lsh_devices.toml"] = devices
 
     path.mkdir(parents=True, exist_ok=True)
     (path / "generated").mkdir(exist_ok=True)
     for target, content in files.items():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+
+    if command == "python lsh-stack.pyz" and archive != local_archive:
+        shutil.copy2(archive, local_archive)
+    record_templates(load_stack_config(path / "lsh_stack.toml"))
 
     _print_next_steps(path, command)
     return 0

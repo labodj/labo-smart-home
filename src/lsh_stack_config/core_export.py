@@ -73,20 +73,40 @@ def _resolve_core_tool(core: CoreSettings, *, override_tool: Path | None) -> Pat
 
     raise StackConfigError(
         "cannot find lsh-core generator. Run "
-        f"`{lsh_stack_command()} setup` from the stack project, build the core "
-        "PlatformIO project once from VSCode/CLI, set [core].tool in lsh_stack.toml, "
-        "or set LSH_CORE_TOOL."
+        f"`{lsh_stack_command()} setup` from the stack project "
+        "to install the generator and build your devices."
     )
 
 
 def installed_lsh_core_tools(project_dir: Path) -> tuple[Path, ...]:
     """Return lsh-core generator tools installed in a PlatformIO project."""
     libdeps = project_dir / ".pio" / "libdeps"
-    return tuple(sorted(libdeps.glob("*/lsh-core/tools/generate_lsh_static_config.py")))
+    tools = set(libdeps.glob("*/lsh-core/tools/generate_lsh_static_config.py"))
+    for link in sorted(libdeps.glob("*/lsh-core.pio-link")):
+        try:
+            raw = json.loads(link.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        spec = raw.get("spec") if isinstance(raw, dict) else None
+        uri = spec.get("uri") if isinstance(spec, dict) else None
+        if not isinstance(uri, str) or not uri.startswith("symlink://"):
+            continue
+        root = Path(uri.removeprefix("symlink://"))
+        if not root.is_absolute():
+            cwd = raw.get("cwd")
+            root = (Path(cwd) if isinstance(cwd, str) else link.parent) / root
+        tool = root / _TOOL_RELATIVE_PATH
+        if tool.is_file():
+            tools.add(tool.resolve())
+    return tuple(sorted(tools))
 
 
 def _existing_tool(path: Path) -> Path:
     candidate = path.resolve()
     if not candidate.is_file():
-        raise StackConfigError(f"lsh-core generator not found: {candidate}")
+        raise StackConfigError(
+            f"lsh-core generator not found: {candidate}. "
+            "Correct the explicit tool path ([core].tool or LSH_CORE_TOOL), "
+            f"or remove the override and run `{lsh_stack_command()} setup`."
+        )
     return candidate

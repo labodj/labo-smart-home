@@ -27,6 +27,7 @@ from .models import BridgeProfileSettings, JsonObject, StackConfig
 from .paths import display_path, path_from
 from .platformio_bridge_targets_script import render_platformio_bridge_targets_script
 from .platformio_core_system_tools_script import render_platformio_core_system_tools_script
+from .platformio_core_targets_script import render_platformio_core_targets_script
 from .platformio_utils import (
     inherited_option_values,
     path_for_platformio,
@@ -41,6 +42,7 @@ from .render_common import (
     bridge_usb_upload_env,
     core_build_env,
     default_bridge_profile,
+    default_core_profile,
     device_names,
     json_list,
     json_object,
@@ -96,141 +98,82 @@ def _write_if_changed(path: Path, content: str) -> None:
 
 def write_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) -> list[Path]:
     """Write the generated files consumed by bridge, coordinator and Node-RED."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
+    files = render_output_tree(output_dir, config, stack)
+    for path, content in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_if_changed(path, content)
+    # Remove only known disposable outputs, never arbitrary user files.
+    optional = (
+        "platformio-core-system-tools.py",
+        "platformio-bridge-targets.py",
+        "platformio-bridge-batch.py",
+        "bridge-ota.py",
+        "bridge-ota.json",
+    )
+    stale = [output_dir / name for name in optional]
+    stale.extend((output_dir / "bridge-platformio-flags").glob("*.txt"))
+    for path in stale:
+        if path not in files:
+            path.unlink(missing_ok=True)
+    return list(files)
 
-    stack_path = output_dir / "lsh-stack-config.json"
-    _write_if_changed(stack_path, stack_json(stack))
-    written.append(stack_path)
 
+def render_output_tree(output_dir: Path, config: StackConfig, stack: JsonObject) -> dict[Path, str]:
+    """One source of truth for generation and read-only freshness checks."""
     coordinator = json_object(stack["coordinator"])
-    system_config_path = output_dir / "system-config.json"
-    _write_if_changed(system_config_path, stack_json(json_object(coordinator["systemConfig"])))
-    written.append(system_config_path)
-
-    node_red = json_object(json_object(stack["nodeRed"])["lshLogic"])
-    node_red_path = output_dir / "node-red-lsh-logic.json"
-    _write_if_changed(node_red_path, stack_json(node_red))
-    written.append(node_red_path)
-
-    node_red_guide_path = output_dir / "node-red-setup.md"
-    _write_if_changed(node_red_guide_path, render_node_red_setup_guide(stack))
-    written.append(node_red_guide_path)
-
-    bridge_dir = output_dir / "bridge-platformio-flags"
-    bridge_dir.mkdir(exist_ok=True)
-    flag_path = bridge_dir / "bridge.txt"
-    for stale_flag_file in bridge_dir.glob("*.txt"):
-        if stale_flag_file != flag_path:
-            stale_flag_file.unlink()
-    bridge_flags = json_list(json_object(stack["bridge"])["platformioBuildFlags"])
-    _write_if_changed(flag_path, "\n".join(str(flag) for flag in bridge_flags) + "\n")
-    written.append(flag_path)
-
-    core_system_tools_script_path = _write_core_system_tools_script(output_dir, config, written)
-
-    core_ini_path = output_dir / "platformio-core.ini"
-    _write_if_changed(
-        core_ini_path,
-        render_platformio_core_ini(
-            config,
-            stack,
-            core_ini_path,
-            core_system_tools_script_path,
+    flags = json_list(json_object(stack["bridge"])["platformioBuildFlags"])
+    files = {
+        output_dir / "lsh-stack-config.json": stack_json(stack),
+        output_dir / "system-config.json": stack_json(json_object(coordinator["systemConfig"])),
+        output_dir / "node-red-lsh-logic.json": stack_json(
+            json_object(json_object(stack["nodeRed"])["lshLogic"])
         ),
-    )
-    written.append(core_ini_path)
-
-    bridge_ota = _write_bridge_ota_artifacts(output_dir, config, written)
-    bridge_targets_script_path = _write_bridge_targets_script(output_dir, config, written)
-
-    bridge_ini_path = output_dir / "platformio-bridge.ini"
-    _write_if_changed(
-        bridge_ini_path,
-        render_platformio_bridge_ini(
-            config,
-            stack,
-            bridge_ini_path,
-            bridge_targets_script_path,
-            bridge_ota,
-        ),
-    )
-    written.append(bridge_ini_path)
-
-    deploy_plan_path = output_dir / "deploy-plan.json"
-    _write_if_changed(
-        deploy_plan_path,
-        stack_json(
-            render_deploy_plan(
-                config,
-                stack,
-                bridge_ota,
-            )
-        ),
-    )
-    written.append(deploy_plan_path)
-
-    guide_path = output_dir / "README.generated.md"
-    _write_if_changed(guide_path, render_generated_readme(config, stack, output_dir))
-    written.append(guide_path)
-
-    return written
-
-
-def _write_bridge_targets_script(
-    output_dir: Path,
-    config: StackConfig,
-    written: list[Path],
-) -> Path | None:
-    targets_path = output_dir / "platformio-bridge-targets.py"
-    stale_batch_path = output_dir / "platformio-bridge-batch.py"
-    if uses_generated_bridge_ota_script(config):
-        _write_if_changed(targets_path, render_platformio_bridge_targets_script())
-        written.append(targets_path)
-        if stale_batch_path.exists():
-            stale_batch_path.unlink()
-        return targets_path
-
-    for path in (targets_path, stale_batch_path):
-        if path.exists():
-            path.unlink()
-    return None
-
-
-def _write_core_system_tools_script(
-    output_dir: Path,
-    config: StackConfig,
-    written: list[Path],
-) -> Path | None:
-    script_path = output_dir / "platformio-core-system-tools.py"
+        output_dir / "node-red-setup.md": render_node_red_setup_guide(stack),
+        output_dir / "node-red-flow.json": json.dumps(render_node_red_flow(stack), indent=2) + "\n",
+        output_dir / "bridge-platformio-flags/bridge.txt": "\n".join(map(str, flags)) + "\n",
+        output_dir / "platformio-core-targets.py": render_platformio_core_targets_script(),
+    }
+    system_tools = None
     if config.platformio.core_prefer_system_tools:
-        _write_if_changed(script_path, render_platformio_core_system_tools_script())
-        written.append(script_path)
-        return script_path
-    if script_path.exists():
-        script_path.unlink()
-    return None
-
-
-def _write_bridge_ota_artifacts(
-    output_dir: Path,
-    config: StackConfig,
-    written: list[Path],
-) -> BridgeOtaArtifacts:
-    script_path = output_dir / "bridge-ota.py"
-    config_path = output_dir / "bridge-ota.json"
+        system_tools = output_dir / "platformio-core-system-tools.py"
+        files[system_tools] = render_platformio_core_system_tools_script()
+    bridge_targets = None
+    bridge_ota = BridgeOtaArtifacts()
     if uses_generated_bridge_ota_script(config):
-        _write_if_changed(script_path, render_bridge_ota_script())
-        written.append(script_path)
-        _write_if_changed(config_path, stack_json(render_bridge_ota_config(config)))
-        written.append(config_path)
-        return BridgeOtaArtifacts(script=script_path, config=config_path)
+        script, settings = output_dir / "bridge-ota.py", output_dir / "bridge-ota.json"
+        files[script] = render_bridge_ota_script()
+        files[settings] = stack_json(render_bridge_ota_config(config))
+        bridge_ota = BridgeOtaArtifacts(script=script, config=settings)
+        bridge_targets = output_dir / "platformio-bridge-targets.py"
+        files[bridge_targets] = render_platformio_bridge_targets_script()
+    core_ini, bridge_ini = output_dir / "platformio-core.ini", output_dir / "platformio-bridge.ini"
+    files[core_ini] = render_platformio_core_ini(
+        config, stack, core_ini, system_tools, output_dir / "platformio-core-targets.py"
+    )
+    files[bridge_ini] = render_platformio_bridge_ini(
+        config, stack, bridge_ini, bridge_targets, bridge_ota
+    )
+    files[output_dir / "deploy-plan.json"] = stack_json(
+        render_deploy_plan(config, stack, bridge_ota)
+    )
+    files[output_dir / "README.generated.md"] = render_generated_readme(config, stack, output_dir)
+    return files
 
-    if script_path.exists():
-        script_path.unlink()
-    if config_path.exists():
-        config_path.unlink()
-    return BridgeOtaArtifacts()
+
+def generated_file_problems(output_dir: Path, config: StackConfig, stack: JsonObject) -> list[str]:
+    """Check every expected output without writing files or displaying secrets."""
+    problems = []
+    for path, expected in render_output_tree(output_dir, config, stack).items():
+        try:
+            actual = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            problems.append(f"missing or unreadable {display_path(path)}; run generate.")
+            continue
+        # This guide embeds the invoking launcher's location; it is informational,
+        # not a build input. All machine-consumed files are compared byte for byte.
+        if path.name != "README.generated.md" and actual != expected:
+            problems.append(f"outdated {display_path(path)}; run generate.")
+    return problems
 
 
 def render_platformio_core_ini(
@@ -238,10 +181,12 @@ def render_platformio_core_ini(
     stack: JsonObject,
     ini_path: Path,
     system_tools_script_path: Path | None = None,
+    targets_script_path: Path | None = None,
 ) -> str:
     """Render PlatformIO environments for controller firmware builds."""
     devices = device_names(stack)
     profiles = config.platformio.core_profiles
+    default_profile = default_core_profile(profiles)
     core_project = config.platformio.core_project
     config_path = path_for_platformio(config.core.devices, core_project)
     ini_ref = path_for_platformio(ini_path, core_project)
@@ -250,6 +195,11 @@ def render_platformio_core_ini(
         "; Include this file from the controller PlatformIO project:",
         "; [platformio]",
         f"; extra_configs = {ini_ref}",
+        "",
+        "[platformio]",
+        # Keep default Upload single-device; explicit Build All remains a separate task.
+        "default_envs = "
+        + core_build_env(config, devices[0] if devices else "device", default_profile),
         "",
         "[lsh_stack_core]",
         f"custom_lsh_config = {config_path}",
@@ -264,6 +214,10 @@ def render_platformio_core_ini(
                 env_name,
                 system_tools_script_path,
             )
+            if targets_script_path is not None:
+                script_entries.append(
+                    "post:" + path_for_platformio(targets_script_path, core_project)
+                )
             extra_scripts = _core_extra_script_lines(config, profile.base_env, script_entries)
             lines.extend(
                 [
@@ -272,6 +226,8 @@ def render_platformio_core_ini(
                     *extra_scripts,
                     "custom_lsh_config = ${lsh_stack_core.custom_lsh_config}",
                     f"custom_lsh_device = {device}",
+                    "custom_lsh_stack_core_envs = "
+                    + " ".join(core_build_env(config, name, profile) for name in devices),
                     "",
                 ]
             )
@@ -338,18 +294,20 @@ def render_node_red_setup_guide(stack: JsonObject) -> str:
         "# Node-RED LSH Logic Setup",
         "",
         "This file is generated from `lsh_stack.toml`. Regenerate it after changing the",
-        "stack TOML, then copy these values into the Node-RED editor.",
+        "stack TOML. Import the generated flow, or use the fields below for an existing node.",
         "",
         "## Steps",
         "",
         "1. Install `node-red-contrib-lsh-logic` from the Node-RED palette.",
         "2. Restart Node-RED if the editor asks for it.",
-        "3. Add one `lsh-logic` node to a flow.",
-        "4. Add standard MQTT input and output nodes and wire them like the",
-        "   `node-red-contrib-lsh-logic` example flow.",
-        "5. Open the `lsh-logic` node and set the fields below.",
-        "6. Configure the MQTT broker node manually for your broker host, credentials and TLS.",
-        "7. Deploy the flow.",
+        "3. Import `node-red-flow.json` using Menu > Import > select a file.",
+        "4. Keep the imported tab disabled until you have reviewed it.",
+        "5. Select the same MQTT broker in both MQTT nodes; set host, credentials and TLS there.",
+        "6. Connect the Other actors output to your integrations when needed.",
+        "7. Disable any previous coordinator flow, enable this tab, then deploy manually.",
+        "",
+        "Import once. After TOML edits, update the existing logic node using the raw fields below",
+        "or replace the old flow. Running two coordinators for the same devices is not supported.",
         "",
         "## lsh-logic Fields",
         "",
@@ -377,6 +335,90 @@ def render_node_red_setup_guide(stack: JsonObject) -> str:
         "source of truth for scripts or for checking every generated value.",
     ]
     return "\n".join(lines) + "\n"
+
+
+def render_node_red_flow(stack: JsonObject) -> list[JsonObject]:
+    """A disabled, importable flow; broker and credentials remain editor-owned."""
+    node_config = json_object(json_object(stack["nodeRed"])["lshLogic"])
+    tab = "lsh-stack-flow"
+    # Dynamic subscriptions use output four of the existing node; raw buffers work
+    # with both JSON and MessagePack and preserve the Homie text messages intact.
+    nodes: list[JsonObject] = [
+        {
+            "id": tab,
+            "type": "tab",
+            "label": "LSH Stack",
+            "disabled": True,
+            "info": "Select a broker in both MQTT nodes before enabling this flow.",
+        },
+        {
+            "id": "lsh-stack-logic",
+            "type": "lsh-logic",
+            "z": tab,
+            **node_config,
+            "x": 380,
+            "y": 180,
+            "wires": [
+                ["lsh-stack-out"],
+                ["lsh-stack-other"],
+                ["lsh-stack-alerts"],
+                ["lsh-stack-in"],
+                ["lsh-stack-debug"],
+            ],
+        },
+        {
+            "id": "lsh-stack-in",
+            "type": "mqtt in",
+            "z": tab,
+            "name": "LSH / Homie",
+            "topic": "",
+            "qos": "1",
+            "datatype": "buffer",
+            "broker": "",
+            "inputs": 1,
+            "nl": False,
+            "rap": True,
+            "rh": 0,
+            "x": 140,
+            "y": 180,
+            "wires": [["lsh-stack-logic"]],
+        },
+        {
+            "id": "lsh-stack-out",
+            "type": "mqtt out",
+            "z": tab,
+            "name": "LSH commands",
+            "topic": "",
+            "qos": "",
+            "retain": "",
+            "broker": "",
+            "x": 680,
+            "y": 80,
+            "wires": [],
+        },
+    ]
+    for key, label, y, active in (
+        ("other", "Other actors", 140, True),
+        ("alerts", "Alerts", 200, True),
+        ("debug", "Diagnostics", 260, False),
+    ):
+        nodes.append(
+            {
+                "id": "lsh-stack-" + key,
+                "type": "debug",
+                "z": tab,
+                "name": label,
+                "active": active,
+                "tosidebar": True,
+                "console": False,
+                "complete": "true",
+                "targetType": "full",
+                "x": 680,
+                "y": y,
+                "wires": [],
+            }
+        )
+    return nodes
 
 
 @dataclass(frozen=True)
@@ -593,11 +635,11 @@ def _readme_bridge_ota_section(ctx: _GeneratedReadmeContext) -> list[str]:
                     ctx.sample_ota_device,
                     config_base_dir=ctx.stack_root,
                 ),
-                stack_command("ota", ctx.config, config_base_dir=ctx.stack_root),
+                stack_command("ota", ctx.config, "--all", config_base_dir=ctx.stack_root),
                 "```",
                 "",
-                "With no device argument, the stack OTA command targets every configured "
-                "bridge. Pass multiple device ids for a subset.",
+                "Use --all explicitly to target every bridge. "
+                "Pass multiple device ids for a subset.",
                 "If a prerequisite is missing, the command exits with the install command to run.",
                 "",
             ]
@@ -632,6 +674,9 @@ def _readme_platformio_ide_section(ctx: _GeneratedReadmeContext) -> list[str]:
         "Open the core or bridge project in VSCode with the PlatformIO extension. Refresh "
         "Project Tasks after regenerating this directory.",
         "",
+        "- Core: choose a controller environment, then Custom -> "
+        "`LSH Build All Controllers` or `LSH Clean All Controllers`. "
+        "These tasks use that environment's profile for every controller and never upload.",
         f"- Default bridge profile: `{profile_key(ctx.plan.default_bridge_profile)}`.",
         f"- Available bridge profiles: {ctx.bridge_profile_names}.",
         "- Build one default bridge firmware: Project Tasks -> "
@@ -710,6 +755,7 @@ def _readme_generated_outputs_section(ctx: _GeneratedReadmeContext) -> list[str]
         "- `node-red-lsh-logic.json`: raw Node-RED `lsh-logic` node fields for scripts.",
         "- `bridge-platformio-flags/bridge.txt`: bridge `build_flags` as a plain list.",
         "- `platformio-core.ini`: controller build environments.",
+        "- `platformio-core-targets.py`: build/clean all controllers from PlatformIO IDE.",
         *(
             [
                 "- `platformio-core-system-tools.py`: optional PlatformIO PATH helper "

@@ -27,8 +27,9 @@ MQTT/Homie values, and the coordinator or Node-RED node receives matching device
 and topics. This gives maximum control, but you must keep repeated values aligned by
 hand.
 
-The configurator does not keep hidden state. Files under `generated/` are disposable,
-and generated commands show the config files they use, including OTA JSON files.
+Files under `generated/` are disposable. `.lsh-stack/templates.json` records original
+template hashes solely for safe upgrades; it is not runtime configuration. Keep it in
+your installation repository. Generated commands show the config files they use.
 
 ## Quick Start
 
@@ -39,7 +40,7 @@ repository, use the standard Python launcher script. On Windows, use `py` instea
 Create one personal installation project:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation
+python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation --interactive
 cd my-lsh-installation
 ```
 
@@ -71,32 +72,30 @@ early validation.
 files so PlatformIO can install packages in a fresh project. The first `generate` run
 replaces them with controller-derived environments.
 
-Build the starter controller once so PlatformIO installs `lsh-core` and the bootstrap
-pre-build hook can generate `core/include/lsh_user_config.hpp`:
-
-- IDE path: open `core/` in VSCode with the PlatformIO extension and run `core_panel` ->
-  Build.
-- CLI path, when `platformio` is available:
-
-  ```bash
-  platformio run -d core -e core_panel
-  ```
-
-Generate all stack artifacts:
+Check your actual I/O pins, then install dependencies, generate and compile the stack:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py generate
+python /path/to/labo-smart-home/lsh-stack.py setup
 ```
 
-If `generate` cannot find the `lsh-core` generator yet, build `core_panel` once from the
-IDE or CLI so dependencies are installed, or set `[core].tool` to a local `lsh-core`
-checkout.
+The wizard only supports the reference Controllino Maxi/ESP32 hardware and never guesses
+pins. Without `--interactive`, `new` retains the editable example wiring. `setup`
+installs the generator without compiling the placeholder device, so renaming devices
+before the first build is supported. Progress/download output remains visible; after
+fixing a reported failure, rerun `setup`. It never uploads firmware.
+
+PlatformIO is detected on PATH, in its VSCode-managed environment (including
+`PLATFORMIO_CORE_DIR`), or as a Python module. Install PlatformIO Core only if none is
+available. A release zipapp copies itself to the new installation as `lsh-stack.pyz`;
+use `python lsh-stack.pyz` there, or `python ../lsh-stack.pyz` from `core/`/`bridge/`.
+The nearest parent `lsh_stack.toml` is selected unless you pass `--config PATH`.
 
 The output directory contains:
 
 - `lsh-stack-config.json`: complete machine-readable export;
 - `system-config.json`: coordinator `systemConfig`;
 - `node-red-setup.md`: guided Node-RED GUI setup with the exact values to copy;
+- `node-red-flow.json`: disabled, linked MQTT/logic flow ready for manual import;
 - `node-red-lsh-logic.json`: raw fields for scripts that need only the `lsh-logic` node
   configuration;
 - `bridge-platformio-flags/bridge.txt`: raw build flags for the wide bridge firmware;
@@ -120,6 +119,90 @@ want the likely fix in plain language. Use
 controller environment, bridge environments, MQTT topics, build flags and coordinator
 entry for one controller.
 
+## Daily Operations
+
+These examples use the installed `lsh-stack` command; the zipapp supports exactly the
+same arguments. Replace `panel` and the serial port with your real device.
+
+```bash
+lsh-stack core list
+lsh-stack core build --all --debug
+lsh-stack core upload panel --port /dev/ttyACM0
+lsh-stack bridge list
+lsh-stack bridge build --debug
+lsh-stack bridge clean
+lsh-stack bridge upload panel --port /dev/ttyUSB0
+lsh-stack bridge monitor panel --port /dev/ttyUSB0
+lsh-stack ota panel --dry-run
+lsh-stack ota panel --debug
+lsh-stack ota --all
+lsh-stack bridge diagnose --all --duration 30
+```
+
+The bridge binary is shared by all devices: `bridge build` compiles it once. USB upload
+and monitor require exactly one device and a port, supplied explicitly or through
+`deploy.bridge.devices`. The device argument selects the endpoint, not its Homie
+identity; provision that identity on the bridge. `bridge diagnose` only observes MQTT,
+using the shared script shipped by a supporting version of `lsh-bridge` and `uv`; it
+cannot send burst commands. It uses the same `[deploy.bridge.ota]` connection settings
+as OTA.
+
+**OTA safety change:** bare `ota` is now rejected. Select names or `--all` explicitly.
+Automation using bare `ota` must add `--all`. A preview shows targets/profile before
+building, and a per-device summary reports success/failure. `--dry-run` never builds,
+prompts for passwords, regenerates files or contacts a device.
+
+Bridge `--debug` chooses the configured debug counterpart of the selected standard
+family: LittleFS stays LittleFS. Unknown/ambiguous families require `--profile NAME`
+without the shorthand. Migration profiles are never selected implicitly by `--debug`.
+Custom core profiles likewise use `--profile` explicitly.
+
+`check` validates the source configuration. `status` distinguishes configuration
+validation, output presence/freshness and firmware not checked. `doctor` fails when a
+generated helper is missing, unreadable or obsolete; use `generate` then rerun it.
+Neither command proves that a device is online or that firmware was flashed. `status`
+also identifies the running generator version, source path and launcher, and reports the
+release/local dependency selection of both projects. Mixed selections recommend
+completing the switch with `dev local` or `dev release`. Unknown device/profile errors
+list the available names; `doctor` provides the exact regeneration/recheck commands.
+
+For development, use `dev local` and `dev release`; both regenerate and build the whole
+default stack. `dev status` reports the mode, and `--no-build` only switches dependency
+overrides. See the [development workflow](./README.md#technical-direction) for details.
+
+## Node-RED Import
+
+Install `node-red-contrib-lsh-logic`, import `generated/node-red-flow.json`, and select
+the same broker in both MQTT nodes. Set credentials/TLS in the editor. The tab starts
+disabled; review its settings and connect external actors before enabling and deploying
+it. Disable the old coordinator flow first. Never run two coordinators for one stack.
+
+The flow includes all five logic outputs, dynamic subscriptions and raw-buffer MQTT
+input compatible with JSON/MessagePack. No broker credentials are exported into it.
+After configuration changes, update the existing logic node from
+`node-red-lsh-logic.json` or replace the old flow. Do not repeatedly import active
+copies. The raw node export remains available for existing integrations.
+
+## Updating an Installation
+
+Replace the installation's zipapp with a newer release, then run:
+
+```bash
+python lsh-stack.pyz templates check
+python lsh-stack.pyz templates diff
+python lsh-stack.pyz templates apply
+python lsh-stack.pyz setup
+```
+
+`check` and `diff` are read-only and return nonzero when work remains. `apply` updates
+only files identical to their recorded originals and saves backups under
+`.lsh-stack/backups/`. Custom, missing, unknown-origin and symlinked files are not
+overwritten; review their diff manually. Old installations without recorded originals
+cannot be automatically merged. Files already equal to the current template can be
+registered by `apply`. TOMLs, credentials and local dependency overrides are never
+template-update targets. The command never fetches a release, changes dependency mode,
+builds firmware or uploads anything on its own.
+
 ## File Shape
 
 ```toml
@@ -138,8 +221,9 @@ homie_base_path = "homie/5/"
 service_topic = "LSH/Node-RED/SRV"
 ```
 
-`core.devices` points to the controller TOML. If the `lsh-core` generator is not next to
-your project, set `core.tool` or the `LSH_CORE_TOOL` environment variable.
+`core.devices` points to the controller TOML. Run `setup` to install the matching core
+generator. For normal local-library development use `dev local`, not `[core].tool`. The
+explicit tool path and `LSH_CORE_TOOL` remain advanced integration overrides.
 
 `transport.mode` currently supports `"serial_bridge"`.
 
@@ -389,11 +473,12 @@ otherwise from `[mqtt].homie_base_path`. Use `broker_password_env` or
 helper reads the environment variable at execution time, so secrets do not appear in
 generated PlatformIO commands.
 
-For interactive use, prefer `lsh-stack ota`: if `broker_password_env` is configured and
-the variable is missing, it prompts for the password before building. For automation,
-set the environment variable with your shell or CI secret mechanism.
-`lsh-stack ota --dry-run` prints the build and upload commands without requiring
-PlatformIO or the password.
+For interactive use, prefer `lsh-stack ota panel`: if `broker_password_env` is
+configured and the variable is missing, it prompts for the password before building. For
+automation, set the environment variable with your shell or CI secret mechanism.
+`lsh-stack ota --all --dry-run` prints the build and upload commands without requiring
+PlatformIO or the password. Relative TLS certificate/key paths are resolved against the
+directory containing `lsh_stack.toml`, independent of the shell's current directory.
 
 Build-all stays a direct PlatformIO CLI command to avoid nested PlatformIO runs from
 inside a custom target:
@@ -471,17 +556,18 @@ extends = "bridge_base"
 default = true
 ```
 
-For controller builds, `platformio-core.ini` adds the `lsh-core` pre-build generator as
-an `extra_scripts` entry. The default path targets a normal PlatformIO package install:
+For controller builds, `platformio-core.ini` uses a bootstrap pre-build hook that
+resolves the installed `lsh-core` generator, including local PlatformIO links, before
+compilation:
 
 ```ini
-pre:.pio/libdeps/core_j1/lsh-core/tools/platformio_lsh_static_config.py
+pre:scripts/lsh_core_bootstrap.py
 ```
 
-If `[core].tool` points at a local `lsh-core` checkout, the generated fragment derives
-the sibling `platformio_lsh_static_config.py` path instead, relative to `core_project`.
-Set `platformio.core_extra_script` only when you need to override that derived path
-explicitly:
+For advanced tooling only, if `[core].tool` points at a local `lsh-core` checkout, the
+generated fragment derives the sibling `platformio_lsh_static_config.py` path instead,
+relative to `core_project`. Set `platformio.core_extra_script` only when you need to
+override that derived path explicitly:
 
 ```toml
 [core]

@@ -37,7 +37,9 @@ def test_lsh_stack_new_uses_zipapp_launcher_command(
     output = capsys.readouterr().out
     readme = (project / "README.md").read_text(encoding="utf-8")
     stack_toml = (project / "lsh_stack.toml").read_text(encoding="utf-8")
-    launcher = f"{command_arg('/usr/bin/python3')} {command_arg(archive)}"
+    launcher = "python lsh-stack.pyz"
+    assert (project / "lsh-stack.pyz").read_bytes() == archive.read_bytes()
+    assert str(archive) not in readme
     assert f"{launcher} setup" in readme
     assert f"{launcher} status" in readme
     assert f"{launcher} doctor" in readme
@@ -62,7 +64,7 @@ def test_cli_help_shows_first_run_examples(
     assert "python ./lsh-stack.pyz new my-home" in output
     assert "python ./lsh-stack.pyz setup" in output
     assert "python ./lsh-stack.pyz status" in output
-    assert "python ./lsh-stack.pyz ota --dry-run" in output
+    assert "python ./lsh-stack.pyz ota --all --dry-run" in output
 
 
 def test_cli_subcommand_help_uses_current_launcher(
@@ -77,5 +79,5 @@ def test_cli_subcommand_help_uses_current_launcher(
 
     assert exc.value.code == 0
     output = capsys.readouterr().out
-    assert "/usr/bin/python3 ./lsh-stack.pyz ota --dry-run" in output
+    assert "/usr/bin/python3 ./lsh-stack.pyz ota --all --dry-run" in output
     assert "/usr/bin/python3 ./lsh-stack.pyz ota panel" in output

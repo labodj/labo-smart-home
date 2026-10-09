@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, NoReturn
 from . import __version__
 from .cli_runtime import (
     bootstrap_core_project,
-    format_command,
     required_platformio_invocation,
     run_or_print,
     subprocess_env_with_ota_password,
@@ -19,15 +18,18 @@ from .cli_runtime import (
 from .commands import stack_command
 from .composer import compose_stack
 from .core_export import installed_lsh_core_tools, load_core_export
-from .deploy import stack_build_plan
+from .deploy import pio_command, stack_build_plan
+from .development import development_status, switch_dependencies
 from .doctor import doctor_fix, project_warnings
 from .errors import StackConfigError
 from .launcher import lsh_stack_command
 from .models import JsonObject, StackConfig
+from .operations import bridge_operation, select_bridge_profile, selected_devices
 from .parser import load_stack_config
-from .paths import absolute_path, display_path
-from .render import render_report, stack_json, write_output_tree
+from .paths import absolute_path, display_path, stack_config_path
+from .render import generated_file_problems, render_report, stack_json, write_output_tree
 from .render_common import (
+    bridge_build_env,
     bridge_devices,
     core_build_env,
     json_list,
@@ -35,11 +37,11 @@ from .render_common import (
 )
 from .scaffold import ensure_project_scaffolds, write_core_starter, write_starter
 from .status import inspect_stack_status, render_stack_status
+from .template_updates import update_templates
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-DEFAULT_CONFIG = Path("lsh_stack.toml")
 DEFAULT_OUTPUT_DIR = Path("generated")
 
 
@@ -52,6 +54,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "new-core": _new_core,
         "setup": _setup,
         "ota": _ota,
+        "core": _core,
+        "bridge": _bridge,
+        "templates": _templates,
+        "dev": _dev,
         "generate": _generate,
         "check": _check,
         "status": _status,
@@ -63,10 +69,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help(sys.stderr)
         return 2
     try:
+        for field in ("config", "config_path"):
+            if hasattr(args, field):
+                setattr(args, field, stack_config_path(getattr(args, field)))
         return handler(args)
     except StackConfigError as exc:
         sys.stderr.write(f"lsh-stack error: {exc}\n")
         return 2
+    except (OSError, EOFError, UnicodeError) as exc:
+        sys.stderr.write(f"lsh-stack error: {exc}\n")
+        return 2
+    except KeyboardInterrupt:
+        sys.stderr.write("\nCancelled; no further operations will run.\n")
+        return 130
 
 
 def entrypoint() -> NoReturn:
@@ -90,9 +105,15 @@ Typical flow:
 
 Need orientation:
   {launcher} status
+  {launcher} core list
+
+Build controllers or switch dependencies (never uploads):
+  {launcher} core build --all
+  {launcher} dev local
+  {launcher} dev release
 
 After the first USB bridge flash and Homie setup:
-  {launcher} ota --dry-run
+  {launcher} ota --all --dry-run
   {launcher} ota panel
 """,
     )
@@ -113,6 +134,9 @@ Example:
     )
     new.add_argument("path", metavar="PROJECT_DIR", type=Path, help="project directory to create")
     new.add_argument("--force", action="store_true", help="overwrite existing starter files")
+    new.add_argument(
+        "--interactive", action="store_true", help="ask for device names and MQTT settings"
+    )
 
     new_core = subparsers.add_parser(
         "new-core",
@@ -158,11 +182,11 @@ the default bridge firmware before reporting success.
     ota = subparsers.add_parser(
         "ota",
         help="build and OTA-upload bridge firmware",
-        description="Build the default bridge firmware profile and OTA-upload it.",
+        description="Build a bridge firmware profile and OTA-upload it.",
         formatter_class=formatter,
         epilog=f"""\
 Examples:
-  {launcher} ota --dry-run
+  {launcher} ota --all --dry-run
   {launcher} ota panel
   {launcher} ota panel lights
 """,
@@ -171,17 +195,65 @@ Examples:
         "device_args",
         nargs="*",
         metavar="DEVICE",
-        help="bridge device ids to update; omitted means all",
+        help="bridge device ids to update (or explicitly use --all)",
     )
     ota.add_argument(
         "--config",
         dest="config_path",
         type=Path,
-        default=DEFAULT_CONFIG,
-        help="path to lsh_stack.toml (default: lsh_stack.toml)",
+        default=None,
+        help="explicit config path (otherwise search this directory and its parents)",
     )
     ota.add_argument("--dry-run", action="store_true", help="print commands without running them")
     ota.add_argument("--list-devices", action="store_true", help="print bridge device ids and exit")
+    ota.add_argument("--profile", help="bridge profile name (default: configured default)")
+    ota.add_argument("--all", action="store_true", dest="all_devices", help="update all bridges")
+    ota.add_argument("--debug", action="store_true", help="debug variant of the selected family")
+
+    core = subparsers.add_parser(
+        "core",
+        help="list, build, clean or USB-upload controllers",
+        description="Use configured controller names and profiles, without remembering env names.",
+        formatter_class=formatter,
+        epilog=f"""\
+Examples:
+  {launcher} core list
+  {launcher} core build --all
+  {launcher} core build panel --profile debug
+  {launcher} core clean --all
+  {launcher} core upload panel --port /dev/ttyACM0
+
+USB upload accepts exactly one device. Build and clean require DEVICE or --all.
+""",
+    )
+    core.add_argument("action", choices=("list", "build", "clean", "upload"))
+    core.add_argument("devices", nargs="*", metavar="DEVICE")
+    core.add_argument("--all", action="store_true", dest="all_devices", help="all controllers")
+    core.add_argument("--profile", help="core profile name (default: configured default)")
+    core.add_argument("--debug", action="store_true", help="use the configured debug profile")
+    core.add_argument("--port", help="USB port for a single upload")
+    core.add_argument("--dry-run", action="store_true", help="print commands without changes")
+    _add_config_option(core)
+
+    _add_bridge_and_template_commands(subparsers)
+
+    dev = subparsers.add_parser(
+        "dev",
+        help="show or switch release/local dependencies, then regenerate and build",
+        description="Switch local libraries on/off without editing release dependency pins.",
+    )
+    dev.add_argument("mode", choices=("status", "local", "release"))
+    dev.add_argument(
+        "--repositories-root",
+        type=Path,
+        help="directory containing lsh-core, lsh-bridge and homie-esp8266 (default: parent)",
+    )
+    dev.add_argument(
+        "--no-build",
+        action="store_true",
+        help="only switch dependency files; run setup afterwards to regenerate and verify",
+    )
+    _add_config_option(dev)
 
     command_help = {
         "generate": "generate stack artifacts",
@@ -212,27 +284,157 @@ Examples:
     return parser
 
 
+def _add_bridge_and_template_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    bridge = subparsers.add_parser("bridge", help="build, USB upload, monitor or diagnose bridges")
+    bridge.add_argument(
+        "action", choices=("list", "build", "clean", "upload", "monitor", "diagnose")
+    )
+    bridge.add_argument("devices", nargs="*", metavar="DEVICE")
+    bridge.add_argument("--all", action="store_true", dest="all_devices")
+    bridge.add_argument("--profile", help="configured firmware profile")
+    bridge.add_argument("--debug", action="store_true", help="debug variant of the selected family")
+    bridge.add_argument("--port", help="explicit serial port for upload or monitor")
+    bridge.add_argument(
+        "--duration", type=int, default=None, help="passive diagnostic duration (default 30s)"
+    )
+    bridge.add_argument("--dry-run", action="store_true", help="show commands without running them")
+    _add_config_option(bridge)
+    templates = subparsers.add_parser("templates", help="check/diff/apply safe template updates")
+    templates.add_argument("action", choices=("check", "diff", "apply"))
+    _add_config_option(templates)
+
+
 def _add_config_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--config",
         type=Path,
-        default=DEFAULT_CONFIG,
-        help="path to lsh_stack.toml (default: lsh_stack.toml)",
+        default=None,
+        help="explicit config path (otherwise search this directory and its parents)",
     )
 
 
 def _new(args: argparse.Namespace) -> int:
-    return write_starter(absolute_path(args.path), force=args.force)
+    return write_starter(absolute_path(args.path), force=args.force, interactive=args.interactive)
+
+
+def _templates(args: argparse.Namespace) -> int:
+    return update_templates(load_stack_config(args.config), action=args.action)
 
 
 def _new_core(args: argparse.Namespace) -> int:
     return write_core_starter(absolute_path(args.path), force=args.force)
 
 
+def _core(args: argparse.Namespace) -> int:
+    config_path = absolute_path(args.config)
+    config, stack = _compose(config_path)
+    plan = stack_build_plan(config, stack)
+    if args.action == "list":
+        if args.devices or args.all_devices or args.port or args.debug or args.profile:
+            raise StackConfigError("core list does not accept target/profile options.")
+        for listed_profile in plan.core_profiles:
+            suffix = " (default)" if listed_profile.default else ""
+            sys.stdout.write(f"{listed_profile.name}{suffix}:\n")
+            for device in plan.core_devices:
+                sys.stdout.write(f"  {device}: {core_build_env(config, device, listed_profile)}\n")
+        return 0
+    devices = _selected_core_devices(args, plan.core_devices)
+    if args.debug:
+        if args.profile not in (None, "release", "debug"):
+            raise StackConfigError("select a custom debug profile explicitly without --debug.")
+        args.profile = "debug"
+    profile = next(
+        (profile for profile in plan.core_profiles if profile.name == args.profile),
+        plan.default_core_profile if args.profile is None else None,
+    )
+    if profile is None:
+        raise StackConfigError(
+            f"unknown core profile: {args.profile}. "
+            f"Available profiles: {', '.join(p.name for p in plan.core_profiles)}. "
+            f"Run `{stack_command('core', config, 'list')}` to see their environments."
+        )
+    platformio = required_platformio_invocation(dry_run=args.dry_run)
+    project = config.platformio.core_project or config.core.devices.parent
+    command = pio_command(
+        str(project),
+        [core_build_env(config, device, profile) for device in devices],
+        target=None if args.action == "build" else args.action,
+    )
+    command = [*platformio, *command[1:]]
+    if args.port:
+        command.extend(["--upload-port", args.port])
+    if not args.dry_run:
+        write_output_tree(_output_dir(config_path), config, stack)
+    return run_or_print(command, dry_run=args.dry_run)
+
+
+def _bridge(args: argparse.Namespace) -> int:
+    if args.duration is not None and args.duration <= 0:
+        raise StackConfigError("--duration must be positive.")
+    config, stack = _compose(args.config)
+    return bridge_operation(args, config, stack)
+
+
+def _selected_core_devices(args: argparse.Namespace, available: tuple[str, ...]) -> list[str]:
+    if args.all_devices and args.devices:
+        raise StackConfigError("choose DEVICE or --all, not both.")
+    devices = list(dict.fromkeys(available if args.all_devices else args.devices))
+    if not devices:
+        raise StackConfigError("select at least one DEVICE or use --all; see core list.")
+    unknown = set(devices) - set(available)
+    if unknown:
+        raise StackConfigError(
+            "unknown core device(s): "
+            + ", ".join(sorted(unknown))
+            + ". Known devices: "
+            + ", ".join(available)
+            + "."
+        )
+    if args.action == "upload" and (args.all_devices or len(devices) != 1):
+        raise StackConfigError("USB upload requires exactly one explicit DEVICE, never --all.")
+    if args.port and args.action != "upload":
+        raise StackConfigError("--port is only supported by core upload.")
+    return devices
+
+
+def _dev(args: argparse.Namespace) -> int:
+    config = load_stack_config(absolute_path(args.config))
+    if args.mode == "status":
+        return development_status(config)
+    root = absolute_path(args.repositories_root or config.path.parent.parent)
+    # Reject an explicit tool pin: otherwise "release" could still execute a local tool.
+    if config.core.tool is not None:
+        raise StackConfigError("remove [core].tool before using dev; tool selection is automatic.")
+    tool = switch_dependencies(config, root, local=args.mode == "local")
+    if args.no_build:
+        sys.stdout.write("Dependencies changed; run setup to regenerate and verify firmware.\n")
+        return 0
+    previous = os.environ.pop("LSH_CORE_TOOL", None)
+    if tool is not None:
+        os.environ["LSH_CORE_TOOL"] = str(tool)
+    try:
+        return _setup(args)
+    finally:
+        os.environ.pop("LSH_CORE_TOOL", None)
+        if previous is not None:
+            os.environ["LSH_CORE_TOOL"] = previous
+
+
 def _setup(args: argparse.Namespace) -> int:
     config_path = absolute_path(args.config)
     output_dir = _output_dir(config_path)
     scaffold_config = load_stack_config(config_path)
+    sys.stdout.write("[1/4] Checking prerequisites\n")
+    try:
+        required_platformio_invocation(dry_run=False)
+    except StackConfigError as exc:
+        sys.stderr.write(f"{exc}\nThen rerun: {stack_command('setup', scaffold_config)}\n")
+        return 1
+    if not scaffold_config.core.devices.is_file():
+        raise StackConfigError(f"core configuration not found: {scaffold_config.core.devices}")
+    sys.stdout.write("[2/4] Preparing projects and installing generator\n")
     scaffolded = ensure_project_scaffolds(scaffold_config)
     bootstrap_result = _bootstrap_core_if_needed(scaffold_config)
     if bootstrap_result != 0:
@@ -248,9 +450,11 @@ def _setup(args: argparse.Namespace) -> int:
             return bootstrap_result
         config, stack = _compose(config_path)
 
+    sys.stdout.write("[3/4] Validating configuration and generating files\n")
     written = write_output_tree(output_dir, config, stack)
     _print_setup_report(config, stack, output_dir, written, scaffolded)
 
+    sys.stdout.write("[4/4] Building every selected controller and the default bridge\n")
     build_result = _build_stack_firmware(config, stack)
     if build_result != 0:
         return build_result
@@ -285,32 +489,44 @@ def _print_setup_report(
             sys.stdout.write(f"- {display_path(path)}\n")
 
 
+def _validate_ota_selection(args: argparse.Namespace) -> None:
+    """Reject ambiguous selectors before invoking the generator or any subprocess."""
+    if args.list_devices and (args.device_args or args.all_devices or args.debug or args.profile):
+        raise StackConfigError("ota --list-devices does not accept target/profile options.")
+    if not args.list_devices and (bool(args.device_args) == args.all_devices):
+        raise StackConfigError("choose DEVICE or --all, not both; see ota --list-devices.")
+
+
 def _ota(args: argparse.Namespace) -> int:
+    _validate_ota_selection(args)
     config_path = absolute_path(args.config_path)
     output_dir = _output_dir(config_path)
     config, stack = _compose(config_path)
-    plan = stack_build_plan(config, stack)
     available_devices = list(bridge_devices(stack))
     if args.list_devices:
         sys.stdout.write("\n".join(available_devices) + ("\n" if available_devices else ""))
         return 0
 
     _validate_stack_ota_support(config)
-    selected_devices = _selected_bridge_devices(available_devices, list(args.device_args))
-    profile = plan.default_bridge_profile
+    targets = selected_devices(
+        tuple(available_devices), args.device_args, all_devices=args.all_devices
+    )
+    profile = select_bridge_profile(config, args.profile, debug=args.debug)
     if not profile.ota:
-        raise StackConfigError("the default bridge profile has ota = false.")
+        raise StackConfigError(f"bridge profile {profile.name} has ota = false.")
 
-    write_output_tree(output_dir, config, stack)
     bridge_project = _bridge_project(config)
-    build_env = plan.default_bridge_env
+    build_env = bridge_build_env(config, profile)
+    sys.stdout.write(f"OTA targets: {', '.join(targets)}; profile: {profile.name} ({build_env})\n")
     firmware = bridge_project / ".pio" / "build" / build_env / "firmware.bin"
     ota_script = output_dir / "bridge-ota.py"
     ota_config = output_dir / "bridge-ota.json"
-    if not ota_script.is_file() or not ota_config.is_file():
-        raise StackConfigError("generated bridge OTA files are missing; run setup first.")
-
-    env = subprocess_env_with_ota_password(ota_config, dry_run=args.dry_run)
+    env = None
+    if not args.dry_run:
+        write_output_tree(output_dir, config, stack)
+        if not ota_script.is_file() or not ota_config.is_file():
+            raise StackConfigError("generated bridge OTA files are missing; run setup first.")
+        env = subprocess_env_with_ota_password(ota_config, dry_run=False)
 
     build_result = run_or_print(
         [
@@ -332,7 +548,8 @@ def _ota(args: argparse.Namespace) -> int:
         raise StackConfigError(f"firmware not found: {firmware}")
 
     failures = 0
-    for device in selected_devices:
+    outcomes = []
+    for device in targets:
         command = _bridge_ota_command_args(
             ota_script=ota_script,
             ota_config=ota_config,
@@ -342,6 +559,16 @@ def _ota(args: argparse.Namespace) -> int:
         result = run_or_print(command, dry_run=args.dry_run, env=env)
         if result != 0:
             failures += 1
+        state = (
+            "planned"
+            if args.dry_run
+            else "OK (updated or already current)"
+            if result == 0
+            else f"FAILED ({result})"
+        )
+        outcomes.append(f"- {device}: {state}")
+
+    sys.stdout.write("OTA summary:\n" + "\n".join(outcomes) + "\n")
 
     return 1 if failures else 0
 
@@ -388,12 +615,20 @@ def _doctor(args: argparse.Namespace) -> int:
     config_path = absolute_path(args.config)
     sys.stdout.write("LSH stack doctor\n")
     try:
-        config, _stack = _compose(config_path)
+        config, stack = _compose(config_path)
     except StackConfigError as exc:
         sys.stdout.write(f"problem: {exc}\n")
         sys.stdout.write(f"fix: {doctor_fix(str(exc))}\n")
         return 1
 
+    problems = generated_file_problems(_output_dir(config_path), config, stack)
+    if problems:
+        sys.stdout.write("generated files need attention:\n" + "\n".join(problems) + "\n")
+        sys.stdout.write(
+            f"fix: run `{stack_command('generate', config)}`, "
+            f"then `{stack_command('doctor', config)}`.\n"
+        )
+        return 1
     warnings = project_warnings(config, _output_dir(config_path))
     if warnings:
         sys.stdout.write("warnings:\n")
@@ -421,7 +656,11 @@ def _explain(args: argparse.Namespace) -> int:
     )
     bridge_key, bridge_entry = _bridge_entry(stack, args.device)
     if system_entry is None and bridge_entry is None:
-        raise StackConfigError(f"unknown device: {args.device}")
+        names = sorted(
+            {str(json_object(device)["name"]) for device in system_devices}
+            | set(bridge_devices(stack))
+        )
+        raise StackConfigError(f"unknown device: {args.device}. Known devices: {', '.join(names)}.")
 
     plan = stack_build_plan(config, stack)
     core_env = core_build_env(config, args.device, plan.default_core_profile)
@@ -470,7 +709,7 @@ def _bootstrap_core_if_needed(config: StackConfig) -> int:
         return 0
     # A generated fragment can contain paths from an older project location. The
     # standalone core environment is the portable bootstrap source and setup
-    # recreates this disposable fragment immediately after the first build.
+    # recreates this disposable fragment immediately after dependency installation.
     generated_core_fragment = config.path.parent / DEFAULT_OUTPUT_DIR / "platformio-core.ini"
     generated_core_fragment.unlink(missing_ok=True)
     return bootstrap_core_project(config)
@@ -488,27 +727,6 @@ def _validate_stack_ota_support(config: StackConfig) -> None:
         raise StackConfigError(
             f"configure [deploy.bridge.ota] before using {lsh_stack_command()} ota."
         )
-
-
-def _selected_bridge_devices(
-    available_devices: list[str],
-    positional: list[str],
-) -> list[str]:
-    selected = [device.strip() for device in positional if device.strip()]
-    if not selected:
-        return available_devices
-
-    known = set(available_devices)
-    unknown = [device for device in selected if device not in known]
-    if unknown:
-        raise StackConfigError(
-            "unknown bridge device(s): "
-            + ", ".join(unknown)
-            + ". Known devices: "
-            + ", ".join(available_devices)
-            + "."
-        )
-    return list(dict.fromkeys(selected))
 
 
 def _bridge_project(config: StackConfig) -> Path:
@@ -558,18 +776,13 @@ def _build_stack_firmware(config: StackConfig, stack: JsonObject) -> int:
 def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: Path) -> None:
     plan = stack_build_plan(config, stack)
     first_device = plan.core_devices[0] if plan.core_devices else "device"
-    core_project = config.platformio.core_project or config.core.devices.parent
-    bridge_project = config.platformio.bridge_project or config.path.parent / "bridge"
-
-    sys.stdout.write("next steps:\n")
-    core_command = format_command(
-        ["platformio", "run", "-d", str(core_project), "-e", plan.default_core_env]
+    sys.stdout.write("next steps (nothing has been flashed):\n")
+    sys.stdout.write(f"- review one device: {stack_command('explain', config, first_device)}\n")
+    sys.stdout.write(
+        f"- USB upload, after checking wiring/port: "
+        f"{stack_command('bridge', config, 'upload', first_device, '--port', '<PORT>')}\n"
     )
-    bridge_command = format_command(
-        ["platformio", "run", "-d", str(bridge_project), "-e", plan.default_bridge_env]
-    )
-    sys.stdout.write(f"- core build: {core_command}\n")
-    sys.stdout.write(f"- bridge build: {bridge_command}\n")
+    sys.stdout.write(f"- Node-RED: import {display_path(output_dir / 'node-red-flow.json')}\n")
     if config.deploy.bridge.ota is not None:
         sys.stdout.write(f"- bridge OTA one: {_stack_ota_cli_command(config, first_device)}\n")
         sys.stdout.write(f"- bridge OTA all: {_stack_ota_cli_command(config)}\n")
@@ -580,7 +793,7 @@ def _print_setup_next_steps(config: StackConfig, stack: JsonObject, output_dir: 
 
 
 def _stack_ota_cli_command(config: StackConfig, device: str | None = None) -> str:
-    args = () if device is None else (device,)
+    args = ("--all",) if device is None else (device,)
     return stack_command("ota", config, *args)
 
 

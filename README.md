@@ -43,12 +43,6 @@ necessary for any PlatformIO dependency deliberately declared with a Git URL.
 The two files normally edited by an installation owner are `core/lsh_devices.toml` and
 `lsh_stack.toml`. Generated files stay under `generated/`.
 
-To update an existing installation after a `labo-smart-home` release, download the
-launcher again to replace `lsh-stack.pyz`, then run `python lsh-stack.pyz setup` from
-the installation root. `setup` refreshes generated files and verifies all firmware, but
-does not overwrite persistent `core/` or `bridge/` project files; merge any
-template-version warning into those files deliberately.
-
 ## What LSH Is
 
 LSH is a reference stack for wired home automation. A Controllino controller keeps local
@@ -238,20 +232,58 @@ default profile and builds the default wide bridge firmware. The lower-level `ge
 command still replaces only the files in `generated/` without compiling firmware.
 
 Run `lsh-stack status` whenever you are unsure what has already been generated or which
-command should come next. It does not build firmware or rewrite files.
+command should come next. It does not build firmware or rewrite files. The report
+identifies the running generator version, code path and launcher command, shows
+release/local dependencies for both projects, and flags incomplete switches.
+Device/profile selection errors list valid names; generated-file errors show the
+regeneration and recheck commands.
 
-For library development, keep release dependencies in the normal `platformio.ini` and
-override only `lib_deps` from an ignored PlatformIO `extra_configs` file using
-`symlink://`. Set `[core].tool` only when the generator itself must use a checkout
-before PlatformIO has installed that checkout.
+Controller commands use the device names and profiles from TOML:
+
+```bash
+lsh-stack core list
+lsh-stack core build --all
+lsh-stack core build panel --profile debug
+lsh-stack core clean --all
+lsh-stack core upload panel --port /dev/ttyACM0
+```
+
+Build and clean require explicit names or `--all`. USB upload accepts exactly one
+device, never `--all`. Add `--dry-run` to inspect commands without changing generated
+files or contacting hardware. The core IDE project also exposes
+`LSH Build All Controllers` and `LSH Clean All Controllers` under Custom for each
+profile.
+
+For library development, switching in either direction is one command:
+
+```bash
+lsh-stack dev local
+lsh-stack dev status
+lsh-stack dev release
+```
+
+`local` finds `lsh-core`, `lsh-bridge` and `homie-esp8266` beside the installation; use
+`--repositories-root PATH` for another location. It overrides only the library entries
+in `platformio.local.ini` using `symlink://`, preserving other dependencies and release
+pins. `release` removes these owned overrides and does not require any local repository.
+Both commands discard `.pio` when the mode changes, regenerate the stack and build all
+default firmware; neither uploads anything. `--no-build` only switches dependencies: run
+`setup` afterwards before building from the IDE.
+
+Existing installations must include `platformio.local*.ini` in each project's
+`[platformio].extra_configs`; new starters already do. Ignore those overrides in Git.
+Custom override files are never overwritten or deleted. Remove an explicit `[core].tool`
+pin before using `dev`; the command chooses the matching core tool. Use the checkout's
+`lsh-stack.py` instead of the zipapp only when testing changes to the generator itself;
+local firmware libraries work with either launcher.
 
 Edit `core/lsh_devices.toml` and `lsh_stack.toml`; treat `generated/` as disposable;
 keep persistent manual extensions in `overrides/` or in the `core/` and `bridge/`
 PlatformIO files.
 
-For Node-RED, install `node-red-contrib-lsh-logic`, add the node to a flow and follow
-`generated/node-red-setup.md`. The generator gives exact copy-paste values for the
-`lsh-logic` node, while MQTT broker settings and the surrounding flow stay in Node-RED.
+For Node-RED, install `node-red-contrib-lsh-logic` and import
+`generated/node-red-flow.json`. Select your broker in both MQTT nodes, review the
+disabled tab, then enable/deploy it manually. See `generated/node-red-setup.md`.
 
 For bridge builds and uploads, use the generated PlatformIO environments from the IDE or
 CLI. Profile tasks such as `bridge_littlefs` build one wide firmware shared by every
@@ -263,10 +295,24 @@ bridge:
 ```bash
 lsh-stack ota j1
 lsh-stack ota j1 j2
-lsh-stack ota
+lsh-stack ota j1 --debug
+lsh-stack ota --all
 ```
 
 If a prerequisite is missing, the command exits with the install command to run.
+
+`ota` requires a device or explicit `--all`. `--debug` preserves the selected bridge
+family, so the default LittleFS profile selects LittleFS debug, not SPIFFS. Use
+`bridge build`, `bridge upload DEVICE --port PORT`, `bridge monitor DEVICE --port PORT`
+or passive `bridge diagnose DEVICE` for the other bridge operations. Passive diagnostics
+require `uv` and an installed `lsh-bridge` containing `tools/mqtt_diagnostics.py`; the
+command reports the missing prerequisite otherwise.
+
+For assisted creation use `new PROJECT_DIR --interactive`. Commands discover the stack
+from `core/` or `bridge/`, and a release zipapp is copied into newly created
+installations. `status`/`doctor` check generated content as well as missing helpers,
+without building or claiming hardware readiness. See
+[Daily Operations](./STACK_CONFIG.md#daily-operations).
 
 ## Public History
 

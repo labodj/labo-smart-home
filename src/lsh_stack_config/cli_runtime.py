@@ -21,7 +21,7 @@ PLATFORMIO_INSTALL_URL = "https://docs.platformio.org/en/latest/core/installatio
 
 
 def bootstrap_core_project(config: StackConfig) -> int:
-    """Build the core project once so PlatformIO installs lsh-core tools."""
+    """Install lsh-core tools without compiling the bootstrap example device."""
     project = config.platformio.core_project or config.core.devices.parent
     platformio = platformio_invocation()
     if platformio is None:
@@ -31,43 +31,44 @@ def bootstrap_core_project(config: StackConfig) -> int:
             "is not available in this shell.\n"
             f"Install PlatformIO Core ({PLATFORMIO_INSTALL_URL}), then run:\n"
             f"  {setup_command}\n"
-            "Why: the first core build downloads lsh-core and exposes the stack "
+            "Why: the dependency installation downloads lsh-core and exposes the stack "
             "config generator; setup then compiles every selected firmware.\n"
         )
         return 1
 
-    command = [*platformio, "run", "-d", str(project)]
+    command = [*platformio, "pkg", "install", "-d", str(project)]
     for env in default_platformio_envs(project):
         command.extend(["-e", env])
 
-    sys.stdout.write("lsh-core generator not found; building the core project once.\n")
+    sys.stdout.write("Installing lsh-core generator (downloads may take several minutes).\n")
     sys.stdout.write("running: " + format_command(command) + "\n")
     sys.stdout.flush()
     completed = subprocess.run(  # noqa: S603 - PlatformIO path is resolved.
         command,
         check=False,
-        capture_output=True,
-        text=True,
     )
     if completed.returncode != 0:
-        sys.stderr.write(completed.stdout)
-        sys.stderr.write(completed.stderr)
-        env_text = ", ".join(default_platformio_envs(project)) or "the default core environment"
         sys.stderr.write(
-            "lsh-core bootstrap build failed. Fix the PlatformIO error above, "
-            f"or build {env_text} from VSCode PlatformIO Project Tasks, then "
+            "lsh-core dependency installation failed. Fix the PlatformIO error above, then "
             f"rerun: {_setup_command(config)}\n"
         )
     else:
-        sys.stdout.write("lsh-core bootstrap build succeeded.\n")
+        sys.stdout.write("lsh-core generator installed; no firmware compiled yet.\n")
     return int(completed.returncode)
 
 
 def platformio_invocation() -> list[str] | None:
     """Return the user's PlatformIO invocation, if available."""
-    executable = shutil.which("platformio")
+    executable = shutil.which("platformio") or shutil.which("pio")
     if executable is not None:
         return [executable]
+
+    # VSCode installs Core here even when its command is absent from PATH.
+    core_dir = Path(os.environ.get("PLATFORMIO_CORE_DIR", str(Path.home() / ".platformio")))
+    for relative in ("penv/bin/platformio", "penv/Scripts/platformio.exe"):
+        candidate = core_dir / relative
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return [str(candidate)]
 
     probe = subprocess.run(
         [sys.executable, "-m", "platformio", "--version"],
@@ -82,14 +83,14 @@ def platformio_invocation() -> list[str] | None:
 
 def required_platformio_invocation(*, dry_run: bool) -> list[str]:
     """Return PlatformIO or a dry-run placeholder; otherwise raise a clear error."""
+    if dry_run:
+        return ["platformio"]
     invocation = platformio_invocation()
     if invocation is not None:
         return invocation
-    if dry_run:
-        return ["platformio"]
     raise StackConfigError(
         "PlatformIO CLI is required to build firmware. Install PlatformIO Core from "
-        f"{PLATFORMIO_INSTALL_URL}; OTA commands can use --dry-run to inspect commands."
+        f"{PLATFORMIO_INSTALL_URL}; core/ota commands support --dry-run to inspect commands."
     )
 
 

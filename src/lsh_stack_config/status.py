@@ -6,12 +6,17 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import cli_runtime
+from . import __version__, cli_runtime
 from .commands import stack_command
-from .core_export import installed_lsh_core_tools
+from .composer import compose_stack
+from .core_export import installed_lsh_core_tools, load_core_export
+from .development import dependency_modes
 from .doctor import project_warnings
+from .errors import StackConfigError
+from .launcher import lsh_stack_command
 from .models import StackConfig
 from .paths import display_path
+from .render import generated_file_problems
 
 _EXPECTED_GENERATED_FILES = (
     "lsh-stack-config.json",
@@ -23,13 +28,14 @@ _EXPECTED_GENERATED_FILES = (
     "bridge-platformio-flags/bridge.txt",
     "deploy-plan.json",
     "README.generated.md",
+    "platformio-core-targets.py",
 )
 _MAX_MISSING_GENERATED_FILES_TO_LIST = 3
 
 
 @dataclass(frozen=True)
 class StackStatus:
-    """Setup progress that can be computed without running lsh-core."""
+    """Read-only setup progress, with full validation when lsh-core is available."""
 
     config: StackConfig
     output_dir: Path
@@ -40,19 +46,42 @@ class StackStatus:
     core_tool_ready: bool
     generated_missing: tuple[Path, ...]
     warnings: tuple[str, ...]
+    validation: str = "not verified (run setup)"
+    generated_problems: tuple[str, ...] = ()
+    local_dependencies: tuple[bool, bool] | None = None
+    dependency_problem: str | None = None
 
 
 def inspect_stack_status(config: StackConfig, output_dir: Path) -> StackStatus:
     """Inspect local setup state without generating files or building firmware."""
     core_project = config.platformio.core_project or config.core.devices.parent
-    bridge_project = config.platformio.bridge_project or config.path.parent
+    bridge_project = config.platformio.bridge_project or config.path.parent / "bridge"
     core_tool, core_tool_ready = _core_tool_status(config, core_project)
     expected_generated_files = list(_EXPECTED_GENERATED_FILES)
     if config.platformio.core_prefer_system_tools:
         expected_generated_files.append("platformio-core-system-tools.py")
+    if config.deploy.bridge.ota is not None:
+        expected_generated_files.extend(
+            ("bridge-ota.py", "bridge-ota.json", "platformio-bridge-targets.py")
+        )
     generated_missing = tuple(
         output_dir / name for name in expected_generated_files if not (output_dir / name).exists()
     )
+    validation = "not verified (run setup)"
+    problems: list[str] = []
+    modes = None
+    dependency_problem = None
+    try:
+        modes = dependency_modes(config)
+    except StackConfigError as exc:
+        dependency_problem = str(exc)
+    if core_tool_ready:
+        try:
+            stack = compose_stack(config, load_core_export(config.core))
+            validation = "valid"
+            problems = generated_file_problems(output_dir, config, stack)
+        except StackConfigError as exc:
+            validation = f"invalid: {exc}"
     return StackStatus(
         config=config,
         output_dir=output_dir,
@@ -63,6 +92,10 @@ def inspect_stack_status(config: StackConfig, output_dir: Path) -> StackStatus:
         core_tool_ready=core_tool_ready,
         generated_missing=generated_missing,
         warnings=tuple(project_warnings(config, output_dir)),
+        validation=validation,
+        generated_problems=tuple(problems),
+        local_dependencies=modes,
+        dependency_problem=dependency_problem,
     )
 
 
@@ -71,18 +104,39 @@ def render_stack_status(status: StackStatus) -> str:
     config = status.config
     lines = [
         "LSH stack status",
+        f"- generator: lsh-stack {__version__}",
+        f"- generator path: {Path(__file__).parent}",
+        f"- launcher: {lsh_stack_command()}",
         f"- stack config: {display_path(config.path)}",
         f"- core config: {_file_status(config.core.devices)}",
         f"- core project: {display_path(status.core_project)}",
         f"- bridge project: {display_path(status.bridge_project)}",
+        "- dependencies: "
+        + (
+            f"core {'local' if status.local_dependencies[0] else 'release'}, "
+            f"bridge {'local' if status.local_dependencies[1] else 'release'}"
+            if status.local_dependencies is not None
+            else f"not verified: {status.dependency_problem}"
+        ),
         f"- PlatformIO CLI: {_platformio_status(status.platformio)}",
         f"- lsh-core generator: {status.core_tool}",
-        f"- generated files: {_generated_status(status.generated_missing)}",
+        f"- configuration: {status.validation}",
+        f"- generated files: {_generated_status(status.generated_missing)} (presence only)",
+        "- generated content: "
+        + (
+            "outdated/incomplete"
+            if status.generated_problems
+            else "current"
+            if status.validation == "valid"
+            else "not verified"
+        ),
+        "- firmware: not verified by status; setup/build verifies compilation, not real devices",
         f"- OTA: {_ota_status(config)}",
     ]
     if status.warnings:
         lines.append("warnings:")
         lines.extend(f"- {warning}" for warning in status.warnings)
+    lines.extend(f"- {problem}" for problem in status.generated_problems)
     lines.append("next action:")
     lines.append(f"- {_next_action(status)}")
     return "\n".join(lines) + "\n"
@@ -138,12 +192,29 @@ def _next_action(status: StackStatus) -> str:
     config = status.config
     if not config.core.devices.is_file():
         return f"create or point [core].devices at {display_path(config.core.devices)}"
-    if not status.core_tool_ready:
-        return f"run {stack_command('setup', config)}"
-    if status.generated_missing:
-        return f"run {stack_command('setup', config)}"
-    if status.warnings:
-        return f"run {stack_command('doctor', config)}"
-    if config.deploy.bridge.ota is not None:
-        return f"run {stack_command('ota', config, '--dry-run')}"
-    return f"build firmware, or run {stack_command('doctor', config)} after edits"
+    if status.local_dependencies is not None and len(set(status.local_dependencies)) > 1:
+        return (
+            f"complete the dependency switch: choose {stack_command('dev', config, 'local')} "
+            f"or {stack_command('dev', config, 'release')}"
+        )
+    if (
+        status.validation.startswith("invalid")
+        or not status.core_tool_ready
+        or status.generated_missing
+    ):
+        command = "doctor" if status.validation.startswith("invalid") else "setup"
+        return f"run {stack_command(command, config)}"
+    if status.dependency_problem or status.warnings:
+        return (
+            f"resolve dependency overrides: {status.dependency_problem}; "
+            f"then run {stack_command('dev', config, 'status')}"
+            if status.dependency_problem
+            else f"run {stack_command('doctor', config)}"
+        )
+    if status.generated_problems:
+        return f"run {stack_command('generate', config)}"
+    return (
+        f"run {stack_command('ota', config, '--all', '--dry-run')}"
+        if config.deploy.bridge.ota is not None
+        else f"build firmware with {stack_command('core', config, 'build', '--all')}"
+    )
