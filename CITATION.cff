@@ -2,6 +2,7 @@ cff-version: 1.2.0
 message: "If you use or reference Labo Smart Home, please cite it using the metadata below."
 title: "Labo Smart Home"
 type: software
+version: "0.4.0"
 authors:
   - family-names: "Labardi"
     given-names: "Jacopo"
