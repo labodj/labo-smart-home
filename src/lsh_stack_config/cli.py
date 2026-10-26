@@ -407,13 +407,11 @@ def _dev(args: argparse.Namespace) -> int:
     # Reject an explicit tool pin: otherwise "release" could still execute a local tool.
     if config.core.tool is not None:
         raise StackConfigError("remove [core].tool before using dev; tool selection is automatic.")
-    tool = switch_dependencies(config, root, local=args.mode == "local")
+    switch_dependencies(config, root, local=args.mode == "local")
     if args.no_build:
         sys.stdout.write("Dependencies changed; run setup to regenerate and verify firmware.\n")
         return 0
     previous = os.environ.pop("LSH_CORE_TOOL", None)
-    if tool is not None:
-        os.environ["LSH_CORE_TOOL"] = str(tool)
     try:
         return _setup(args)
     finally:

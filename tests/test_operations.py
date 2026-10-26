@@ -32,11 +32,11 @@ def test_dev_cli_rebuilds_both_modes_and_restores_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A switch delegates to full setup; release ignores stale local-tool environment pins."""
+    """Both modes use installed dependencies without leaking temporary tool pins."""
     installation = tmp_path / "home"
     scaffold.write_starter(installation, force=False)
     config = installation / "lsh_stack.toml"
-    tool = _local_repositories(tmp_path / "repos")
+    _local_repositories(tmp_path / "repos")
     seen: list[str | None] = []
 
     def setup(_args: object) -> int:
@@ -59,7 +59,7 @@ def test_dev_cli_rebuilds_both_modes_and_restores_environment(
         == 9
     )
     assert cli.main(["dev", "release", "--config", str(config)]) == 9
-    assert seen == [str(tool), None]
+    assert seen == [None, None]
     assert os.environ["LSH_CORE_TOOL"] == "original"
     assert (
         cli.main(
