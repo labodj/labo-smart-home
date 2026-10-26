@@ -1155,7 +1155,7 @@ def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> N
 
     platformio_ini = (project / "platformio.ini").read_text(encoding="utf-8")
     assert "extra_configs = generated/platformio-core.ini" in platformio_ini
-    assert "labodj/lsh-core @ ^4" in platformio_ini
+    assert "labodj/lsh-core @ ^4.0.1" in platformio_ini
     assert "[env:core_panel]" in platformio_ini
 
     readme = (project / "README.md").read_text(encoding="utf-8")

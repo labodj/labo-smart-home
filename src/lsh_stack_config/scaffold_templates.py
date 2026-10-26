@@ -142,7 +142,7 @@ framework = arduino
 board = controllino_maxi
 monitor_speed = 500000
 lib_deps =
-    labodj/lsh-core @ ^4
+    labodj/lsh-core @ ^4.0.1
     controllino-plc/CONTROLLINO
 lib_ldf_mode = deep+
 lib_compat_mode = strict
