@@ -18,7 +18,7 @@ from .deploy import bridge_usb_port, stack_build_plan
 from .errors import StackConfigError
 from .models import BridgeProfileSettings, JsonObject, StackConfig
 from .render import write_output_tree
-from .render_common import bridge_build_env
+from .render_common import bridge_build_env, bridge_profiles_for_device
 
 
 def select_bridge_profile(
@@ -72,6 +72,33 @@ def selected_devices(
     return selected
 
 
+def bridge_profile_groups(
+    config: StackConfig, devices: list[str], name: str | None, *, debug: bool
+) -> dict[BridgeProfileSettings, list[str]]:
+    """Resolve every device before starting work; reject explicit incompatible profiles."""
+    groups: dict[BridgeProfileSettings, list[str]] = {}
+    for device in devices:
+        allowed = bridge_profiles_for_device(config, device)
+        profile = select_bridge_profile(config, name or allowed[0].name, debug=debug)
+        if profile not in allowed:
+            raise StackConfigError(f"bridge profile {profile.name} is not allowed for {device}.")
+        groups.setdefault(profile, []).append(device)
+    return groups
+
+
+def _operation_profile(
+    args: argparse.Namespace, config: StackConfig, available: tuple[str, ...]
+) -> BridgeProfileSettings:
+    """Resolve a USB/build operation to one compatible hardware profile."""
+    if not args.devices and not args.all_devices:
+        return select_bridge_profile(config, args.profile, debug=args.debug)
+    devices = selected_devices(available, args.devices, all_devices=args.all_devices)
+    groups = bridge_profile_groups(config, devices, args.profile, debug=args.debug)
+    if len(groups) != 1:
+        raise StackConfigError("bridge operation requires devices with the same firmware profile.")
+    return next(iter(groups))
+
+
 def bridge_operation(args: argparse.Namespace, config: StackConfig, stack: JsonObject) -> int:
     """Build once per firmware, but require an explicit target/port for USB operations."""
     plan = stack_build_plan(config, stack)
@@ -99,7 +126,7 @@ def bridge_operation(args: argparse.Namespace, config: StackConfig, stack: JsonO
         return _diagnose(args, config, stack, project, devices)
     if args.duration is not None:
         raise StackConfigError("--duration is only supported by bridge diagnose.")
-    profile = select_bridge_profile(config, args.profile, debug=args.debug)
+    profile = _operation_profile(args, config, plan.bridge_devices)
     environment = bridge_build_env(config, profile)
     port = _serial_port(args, config, plan.bridge_devices)
     sys.stdout.write(f"bridge {args.action}: profile {profile.name}, environment {environment}\n")

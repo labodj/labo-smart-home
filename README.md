@@ -210,6 +210,24 @@ fragments for per-device controller environments and stack-wide bridge firmware
 profiles, so every bridge device can run the same selected bridge binary while keeping
 device-specific uploads as IDE targets.
 
+For installations mixing bridge hardware, restrict each device to its compatible
+firmware profiles. The first profile is that device's default:
+
+```toml
+[deploy.bridge.devices.j1]
+profiles = ["pico_littlefs"]
+
+[deploy.bridge.devices.c1]
+profiles = ["littlefs", "littlefs_debug"]
+```
+
+These names refer to `[[platformio.bridge_profiles]]` entries, whose `extends` sections
+define the board, partitions and build flags in `bridge/platformio.ini`. IDE OTA targets
+only list compatible devices. `ota --all` builds once per selected profile and sends
+each binary to its matching devices; an incompatible explicit `--profile` fails before
+building or uploading. Devices without `profiles` retain the unrestricted behavior and
+the stack-wide default.
+
 The normal starting point is the single installation folder shown in
 [Quick Start](#quick-start), with ordinary `core/` and `bridge/` PlatformIO projects
 inside it. Contributors can replace `lsh-stack.pyz` with this checkout's `lsh-stack.py`.

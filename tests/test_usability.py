@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import configparser
 import json
 import tomllib
 from dataclasses import replace
@@ -459,3 +460,127 @@ def test_wizard_unicode_strings_and_long_invalid_port(
     assert (
         load_stack_config(project / "lsh_stack.toml").deploy.bridge.ota.broker_username == username
     )
+
+
+@pytest.fixture
+def mixed_installation(
+    installation: tuple[StackConfig, JsonObject], monkeypatch: pytest.MonkeyPatch
+) -> tuple[StackConfig, JsonObject]:
+    """Parse a heterogeneous installation, using the same configuration as real users."""
+    original, _ = installation
+    original.path.write_text(
+        original.path.read_text()
+        + """
+[[platformio.bridge_profiles]]
+name = "pico_littlefs"
+extends = "lsh_bridge_pico_littlefs"
+ota = true
+
+[deploy.bridge.devices.panel]
+profiles = ["littlefs", "littlefs_debug"]
+usb_port = "/dev/test-esp32"
+
+[deploy.bridge.devices.lights]
+profiles = ["pico_littlefs"]
+usb_port = "/dev/test-s3"
+"""
+    )
+    parsed = load_stack_config(original.path)
+    config = replace(
+        parsed,
+        deploy=replace(
+            parsed.deploy, bridge=replace(parsed.deploy.bridge, ota=original.deploy.bridge.ota)
+        ),
+    )
+    stack = compose_stack(config, _core_export())
+    monkeypatch.setattr(cli, "_compose", lambda _path: (config, stack))
+    return config, stack
+
+
+def test_mixed_hardware_generated_targets(
+    mixed_installation: tuple[StackConfig, JsonObject],
+) -> None:
+    """IDE targets and deploy plans never associate a device with the other architecture."""
+    config, stack = mixed_installation
+    output = config.path.parent / "generated"
+    write_output_tree(output, config, stack)
+    ini = configparser.ConfigParser(interpolation=None)
+    ini.read(output / "platformio-bridge.ini")
+    for profile in config.platformio.bridge_profiles:
+        name = profile.name
+        section = ini[f"env:bridge_{name}"]
+        allowed = (
+            ["lights"]
+            if name == "pico_littlefs"
+            else ["panel"]
+            if name in {"littlefs", "littlefs_debug"}
+            else []
+        )
+        assert section.get("custom_lsh_stack_ota_devices", "").split() == allowed
+    assert "env:bridge_pico_littlefs_usb_lights" in ini
+    assert "env:bridge_pico_littlefs_usb_panel" not in ini
+    assert "env:bridge_littlefs_usb_lights" not in ini
+    plan = json.loads((output / "deploy-plan.json").read_text())
+    assert plan["bridge"]["lights"]["buildEnv"] == "bridge_pico_littlefs"
+    assert plan["bridge"]["panel"]["buildEnv"] == "bridge_littlefs"
+    assert set(plan["bridgeFirmware"]["profiles"]["pico_littlefs"]["otaTargets"]) == {"lights"}
+    assert set(plan["bridgeFirmware"]["profiles"]["littlefs"]["otaTargets"]) == {"panel"}
+
+
+@pytest.mark.usefixtures("mixed_installation")
+def test_mixed_hardware_ota_all_preview(capsys: pytest.CaptureFixture[str]) -> None:
+    """Mixed OTA builds separate binaries and selects the correct path for each device."""
+    assert cli.main(["ota", "--all", "--dry-run"]) == 0
+    output = capsys.readouterr().out
+    assert "OTA targets: panel; profile: littlefs (bridge_littlefs)" in output
+    assert "OTA targets: lights; profile: pico_littlefs (bridge_pico_littlefs)" in output
+    assert "--device-id panel" in output
+    assert "build/bridge_littlefs/firmware.bin" in output
+    assert "--device-id lights" in output
+    assert "build/bridge_pico_littlefs/firmware.bin" in output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["ota", "--all", "--profile", "littlefs"],
+        ["ota", "panel", "--profile", "pico_littlefs"],
+        ["ota", "lights", "--debug"],
+        ["bridge", "upload", "lights", "--profile", "littlefs"],
+        ["bridge", "upload", "panel", "--profile", "pico_littlefs"],
+    ],
+)
+@pytest.mark.usefixtures("mixed_installation")
+def test_mixed_hardware_rejects_wrong_profile_before_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+) -> None:
+    """A bad member of a batch fails preflight before any build, write or network action."""
+    monkeypatch.setattr(cli, "run_or_print", lambda *_a, **_kw: pytest.fail("must not execute"))
+    monkeypatch.setattr(
+        operations, "run_or_print", lambda *_a, **_kw: pytest.fail("must not execute")
+    )
+    monkeypatch.setattr(cli, "write_output_tree", lambda *_a, **_kw: pytest.fail("must not write"))
+    assert cli.main(arguments) == 2
+
+
+@pytest.mark.usefixtures("mixed_installation")
+def test_mixed_hardware_usb_profile_default(capsys: pytest.CaptureFixture[str]) -> None:
+    """The device hardware default also applies to direct USB upload previews."""
+    assert cli.main(["bridge", "upload", "lights", "--dry-run"]) == 0
+    output = capsys.readouterr().out
+    assert "environment bridge_pico_littlefs" in output
+    assert "--upload-port /dev/test-s3" in output
+
+
+@pytest.mark.parametrize("profiles", ["[]", '["littlefs", "littlefs"]', '["typo"]', '"littlefs"'])
+def test_invalid_device_profiles_are_rejected(
+    installation: tuple[StackConfig, JsonObject], profiles: str
+) -> None:
+    """Typos and empty or malformed restrictions must not silently enable all profiles."""
+    config, _ = installation
+    config.path.write_text(
+        config.path.read_text() + f"\n[deploy.bridge.devices.panel]\nprofiles = {profiles}\n"
+    )
+    with pytest.raises(StackConfigError):
+        compose_stack(load_stack_config(config.path), _core_export())

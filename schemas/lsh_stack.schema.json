@@ -174,7 +174,14 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "usb_port": { "type": "string", "minLength": 1 }
+                  "usb_port": { "type": "string", "minLength": 1 },
+                  "profiles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1 },
+                    "description": "Compatible bridge firmware profile names, default first. Omit to allow all profiles."
+                  }
                 }
               }
             }

@@ -23,8 +23,8 @@ from .development import development_status, switch_dependencies
 from .doctor import doctor_fix, project_warnings
 from .errors import StackConfigError
 from .launcher import lsh_stack_command
-from .models import JsonObject, StackConfig
-from .operations import bridge_operation, select_bridge_profile, selected_devices
+from .models import BridgeProfileSettings, JsonObject, StackConfig
+from .operations import bridge_operation, bridge_profile_groups, selected_devices
 from .parser import load_stack_config
 from .paths import absolute_path, display_path, stack_config_path
 from .render import generated_file_problems, render_report, stack_json, write_output_tree
@@ -498,7 +498,6 @@ def _validate_ota_selection(args: argparse.Namespace) -> None:
 def _ota(args: argparse.Namespace) -> int:
     _validate_ota_selection(args)
     config_path = absolute_path(args.config_path)
-    output_dir = _output_dir(config_path)
     config, stack = _compose(config_path)
     available_devices = list(bridge_devices(stack))
     if args.list_devices:
@@ -509,10 +508,25 @@ def _ota(args: argparse.Namespace) -> int:
     targets = selected_devices(
         tuple(available_devices), args.device_args, all_devices=args.all_devices
     )
-    profile = select_bridge_profile(config, args.profile, debug=args.debug)
-    if not profile.ota:
-        raise StackConfigError(f"bridge profile {profile.name} has ota = false.")
+    groups = bridge_profile_groups(config, targets, args.profile, debug=args.debug)
+    for profile in groups:
+        if not profile.ota:
+            raise StackConfigError(f"bridge profile {profile.name} has ota = false.")
+    results = [
+        _ota_profile(args, config, stack, profile, devices) for profile, devices in groups.items()
+    ]
+    return 1 if any(results) else 0
 
+
+def _ota_profile(
+    args: argparse.Namespace,
+    config: StackConfig,
+    stack: JsonObject,
+    profile: BridgeProfileSettings,
+    targets: list[str],
+) -> int:
+    """Build one compatible firmware and send it only to its prevalidated device group."""
+    output_dir = _output_dir(config.path)
     bridge_project = _bridge_project(config)
     build_env = bridge_build_env(config, profile)
     sys.stdout.write(f"OTA targets: {', '.join(targets)}; profile: {profile.name} ({build_env})\n")
