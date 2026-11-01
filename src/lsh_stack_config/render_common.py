@@ -51,6 +51,24 @@ def default_bridge_profile(
     return next(profile for profile in profiles if profile.default)
 
 
+def bridge_profiles_for_device(
+    config: StackConfig, device: str
+) -> tuple[BridgeProfileSettings, ...]:
+    """Return allowed profiles in default-first order, preserving legacy unrestricted devices."""
+    target = next((t for t in config.deploy.bridge.devices if t.device == device), None)
+    profiles = config.platformio.bridge_profiles
+    if target is None or not target.profiles:
+        default = default_bridge_profile(profiles)
+        return (default, *(p for p in profiles if p != default))
+    by_name = {p.name: p for p in profiles}
+    unknown = set(target.profiles) - by_name.keys()
+    if unknown:
+        raise StackConfigError(
+            f"unknown bridge profile(s) for {device}: {', '.join(sorted(unknown))}"
+        )
+    return tuple(by_name[name] for name in target.profiles)
+
+
 def profile_key(profile: BridgeProfileSettings | CoreProfileSettings) -> str:
     """Return the stable deploy-plan key for a firmware profile."""
     return profile.name

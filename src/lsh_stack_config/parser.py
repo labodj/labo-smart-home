@@ -361,9 +361,14 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
         target = _table(raw_target, f"deploy.bridge.devices.{device}")
         _reject_unknown(
             target,
-            {"usb_port"},
+            {"usb_port", "profiles"},
             f"deploy.bridge.devices.{device}",
         )
+        profiles = _string_list(
+            target.get("profiles", []), f"deploy.bridge.devices.{device}.profiles"
+        )
+        if "profiles" in target and (not profiles or len(profiles) != len(set(profiles))):
+            _fail(f"deploy.bridge.devices.{device}.profiles must be nonempty and unique.")
         devices.append(
             BridgeDeployTarget(
                 device=_required_string(device, f"deploy.bridge.devices.{device}"),
@@ -372,6 +377,7 @@ def _parse_bridge_deploy(table: TomlTable) -> BridgeDeploySettings:
                     if "usb_port" in target
                     else None
                 ),
+                profiles=tuple(profiles),
             )
         )
     return BridgeDeploySettings(

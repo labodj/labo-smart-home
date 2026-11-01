@@ -105,10 +105,11 @@ class PlatformioSettings:
 
 @dataclass(frozen=True)
 class BridgeDeployTarget:
-    """Optional per-bridge USB upload endpoint."""
+    """Optional USB endpoint and allowed firmware profiles, default first."""
 
     device: str
     usb_port: str | None = None
+    profiles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from .platformio_utils import path_for_platformio, project_command_path
 from .render_common import (
     bridge_build_env,
     bridge_devices,
+    bridge_profiles_for_device,
     bridge_usb_upload_env,
     core_build_env,
     default_bridge_profile,
@@ -121,7 +122,9 @@ def render_deploy_plan(
         profile_plan[profile_key(profile)] = _bridge_profile_plan(
             config=config,
             bridge_project=bridge_project,
-            devices=list(plan.bridge_devices),
+            devices=[
+                d for d in plan.bridge_devices if profile in bridge_profiles_for_device(config, d)
+            ],
             profile=profile,
             bridge_ota=bridge_ota,
         )
@@ -135,7 +138,8 @@ def render_deploy_plan(
 
     bridge_plan: JsonObject = {}
     for device in plan.bridge_devices:
-        usb_target = bridge_usb_target(config, bridge_project, device, default_profile)
+        device_profile = bridge_profiles_for_device(config, device)[0]
+        usb_target = bridge_usb_target(config, bridge_project, device, device_profile)
         ota_command = bridge_ota_command(
             config,
             device,
@@ -143,6 +147,8 @@ def render_deploy_plan(
             bridge_ota,
         )
         bridge_plan[device] = {
+            "profile": device_profile.name,
+            "buildEnv": bridge_build_env(config, device_profile),
             "defaultMethod": config.deploy.bridge.default_method,
             "defaultUploadCommand": (
                 ota_command

@@ -21,6 +21,7 @@ from .models import (
     NodeRedSettings,
     StackConfig,
 )
+from .render_common import bridge_devices, bridge_profiles_for_device
 
 _TOPIC_SUFFIXES = {
     "input": "IN",
@@ -70,6 +71,12 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
     _apply_bridge_wide_build_flags(stack)
     _apply_coordinator_settings(stack, config.coordinator, system_config)
     _apply_node_red_settings(stack, config.node_red, config.coordinator, system_config)
+
+    available_bridges = bridge_devices(stack)
+    for target in config.deploy.bridge.devices:
+        if target.device not in available_bridges:
+            raise StackConfigError(f"unknown deploy bridge device: {target.device}")
+        bridge_profiles_for_device(config, target.device)
 
     stack["schema"] = "lsh-stack-config/v1"
     stack["stackSource"] = str(config.path)
@@ -132,6 +139,7 @@ def compose_stack(config: StackConfig, core_export: JsonObject) -> JsonObject:
                 {
                     "device": target.device,
                     "usbPort": target.usb_port,
+                    **({"profiles": list(target.profiles)} if target.profiles else {}),
                 }
                 for target in config.deploy.bridge.devices
             ],

@@ -39,6 +39,7 @@ from .render_common import (
     bridge_build_env,
     bridge_devices,
     bridge_flag_section,
+    bridge_profiles_for_device,
     bridge_usb_upload_env,
     core_build_env,
     default_bridge_profile,
@@ -274,7 +275,11 @@ def render_platformio_bridge_ini(
         lines.extend(
             _render_bridge_profile_env(
                 config=config,
-                devices=bridge_device_names,
+                devices=[
+                    d
+                    for d in bridge_device_names
+                    if profile in bridge_profiles_for_device(config, d)
+                ],
                 flag_section=flag_section,
                 profile=profile,
                 target_script=target_script,
@@ -595,7 +600,7 @@ def _readme_platformio_cli_section(ctx: _GeneratedReadmeContext) -> list[str]:
                             [
                                 bridge_usb_upload_env(
                                     ctx.config,
-                                    ctx.plan.default_bridge_profile,
+                                    bridge_profiles_for_device(ctx.config, device)[0],
                                     device,
                                 )
                             ],
@@ -687,8 +692,9 @@ def _readme_platformio_ide_section(ctx: _GeneratedReadmeContext) -> list[str]:
     ]
     lines.extend(
         "- USB-upload configured device port: Project Tasks -> "
-        f"`{bridge_usb_upload_env(ctx.config, ctx.plan.default_bridge_profile, device)}` -> Upload."
+        f"`{bridge_usb_upload_env(ctx.config, profile, device)}` -> Upload."
         for device in ctx.plan.usb_devices
+        for profile in bridge_profiles_for_device(ctx.config, device)[:1]
     )
     if ctx.default_ota_command is not None:
         lines.extend(
@@ -704,8 +710,8 @@ def _readme_platformio_ide_section(ctx: _GeneratedReadmeContext) -> list[str]:
                 "",
                 "- OTA one device: Project Tasks -> `bridge_<profile>` -> Custom -> "
                 "`LSH OTA <device>`.",
-                "- OTA all devices with one firmware: Project Tasks -> `bridge_<profile>` -> "
-                "Custom -> `LSH OTA All`.",
+                "- OTA all compatible devices with one firmware: Project Tasks -> "
+                "`bridge_<profile>` -> Custom -> `LSH OTA All`.",
             ]
         )
     else:
@@ -843,6 +849,8 @@ def _render_bridge_usb_upload_envs(
     lines: list[str] = []
     for profile in profiles:
         for device in devices:
+            if profile not in bridge_profiles_for_device(config, device):
+                continue
             usb_port = bridge_usb_port(config, device)
             if usb_port is None:
                 continue
