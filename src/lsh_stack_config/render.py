@@ -742,10 +742,10 @@ def _readme_runtime_section(ctx: _GeneratedReadmeContext) -> list[str]:
         "",
         "## Node-RED",
         "",
-        "Install `node-red-contrib-lsh-logic`, add the node to a flow and follow "
-        "`node-red-setup.md`. The stack generates exact node settings, but the "
-        "surrounding Node-RED flow stays in Node-RED where it is easier to inspect and "
-        "change.",
+        "For the Node-RED option, install `node-red-contrib-lsh-logic` and import "
+        "[node-red-flow.json](./node-red-flow.json). Select the same broker in both MQTT nodes. "
+        "Review the disabled tab, stop any previous coordinator for these devices, then enable "
+        "and deploy. Follow [node-red-setup.md](./node-red-setup.md) for the exact settings.",
         "",
     ]
 
@@ -757,6 +757,7 @@ def _readme_generated_outputs_section(ctx: _GeneratedReadmeContext) -> list[str]
         "- `lsh-stack-config.json`: complete stack export, including external actor metadata.",
         "- `system-config.json`: coordinator `systemConfig`; use the Coordinator CLI "
         "command above for matching runtime options.",
+        "- `node-red-flow.json`: importable flow with a disabled tab and linked MQTT nodes.",
         "- `node-red-setup.md`: Node-RED GUI setup steps and copy-paste values.",
         "- `node-red-lsh-logic.json`: raw Node-RED `lsh-logic` node fields for scripts.",
         "- `bridge-platformio-flags/bridge.txt`: bridge `build_flags` as a plain list.",

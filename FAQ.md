@@ -191,6 +191,10 @@ customize names, topology, and distributed logic in small steps.
 
 ## What is a practical way to evaluate LSH?
 
+Start with the [build without hardware](./README.md#quick-start) (internet is needed for
+package downloads). You can inspect `core/lsh_devices.toml` and the generated deployment
+guide before deciding which hardware to connect.
+
 Use this order:
 
 1. Read [README.md](./README.md).

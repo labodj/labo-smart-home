@@ -9,6 +9,12 @@ and used by the live installation.
 Read this page when you want one coherent cross-repo explanation before diving into
 repository-specific details. For the broader reading map, use [DOCS.md](./DOCS.md).
 
+If a controller announces an incompatible major live, the coordinator drops the old
+topology, state and affected pending clicks. It resumes after live v3 details followed
+by valid live state. Retained data can populate normal startup. A state arriving before
+topology requests both snapshots in order. An identical pending click request gets
+another ACK with the original deadline and targets.
+
 ## Public Repositories
 
 | Repository                                                                             | Role in the reference stack                                                              |
@@ -160,8 +166,19 @@ The public stack implements a two-phase network click handshake:
 5. `lsh-core` confirms the click with `NETWORK_CLICK_CONFIRM`.
 6. The coordinator executes the distributed automation only after that confirmation.
 
-If the handshake stalls, `lsh-core` falls back according to the configured local policy
-for that clickable.
+The reference implementations distinguish these cases:
+
+| Event                                                         | Behavior                                                                                                                                                       |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Another press on the same button and click type while pending | The core keeps the active slot and rejects a second network request for it.                                                                                    |
+| REQUEST reaches the coordinator again                         | A validated request records pending work for the slot and can produce another ACK. ACK alone never executes the actors.                                        |
+| Matching ACK fails to arrive                                  | At its ACK timeout the core applies the configured fallback (local action or do nothing) and releases the slot.                                                |
+| ACK arrives, but writing CONFIRM fails                        | The core retries CONFIRM until its confirm-retry timeout, then drops the acknowledged click. There is no subsequent local fallback for that acknowledged slot. |
+| Late or repeated CONFIRM                                      | The coordinator consumes a matching pending transaction once; an expired or missing transaction cannot execute actors.                                         |
+| Restart or ID rollover                                        | Re-establish topology and state after BOOT. Correlations range from 1 through 255 and are reused. Match device, button, type and active correlation together.  |
+
+The final confirmation records acceptance of the click. Observe subsequent state
+snapshots to verify actuator state.
 
 ```mermaid
 sequenceDiagram

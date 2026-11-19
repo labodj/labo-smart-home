@@ -33,16 +33,10 @@ your installation repository. Generated commands show the config files they use.
 
 ## Quick Start
 
-After installing the package, use `lsh-stack` directly. From a checkout of this
-repository, use the standard Python launcher script. On Windows, use `py` instead of
-`python` if that is how Python is installed.
-
-Create one personal installation project:
-
-```bash
-python /path/to/labo-smart-home/lsh-stack.py new my-lsh-installation --interactive
-cd my-lsh-installation
-```
+Start in the installation created by the [Quick Start](./README.md#quick-start). The
+release launcher is now in this folder. For the assisted starter, add `--interactive` to
+the initial `new` command. Where this reference uses `lsh-stack`, substitute
+`python lsh-stack.pyz` from the installation root.
 
 The starter project has two normal PlatformIO projects, disposable generated files in
 `generated/` and persistent local notes or manual extensions in `overrides/`. When you
@@ -66,7 +60,12 @@ my-lsh-installation/
 
 The TOML files include `#:schema` hints. Editors with TOML schema support can use
 [`schemas/lsh_stack.schema.json`](./schemas/lsh_stack.schema.json) for completions and
-early validation.
+early validation. The stack schema points to the published source revision used by this
+starter. The core schema points to the tested core release. If your PlatformIO
+dependency resolves to a different version, point the core TOML's `#:schema` at the
+installed package's `docs/lsh_devices.schema.json`. For device-specific completions use
+that package's generator with `--write-vscode-schema` on the core TOML and use
+`#:schema ./.vscode/lsh_devices.schema.json`.
 
 `generated/platformio-core.ini` and `generated/platformio-bridge.ini` start as bootstrap
 files so PlatformIO can install packages in a fresh project. The first `generate` run
@@ -75,7 +74,7 @@ replaces them with controller-derived environments.
 Check your actual I/O pins, then install dependencies, generate and compile the stack:
 
 ```bash
-python /path/to/labo-smart-home/lsh-stack.py setup
+python lsh-stack.pyz setup
 ```
 
 The wizard only supports the reference Controllino Maxi/ESP32 hardware and never guesses
@@ -139,8 +138,10 @@ lsh-stack ota --all
 lsh-stack bridge diagnose --all --duration 30
 ```
 
-The bridge binary is shared by all devices: `bridge build` compiles it once. USB upload
-and monitor require exactly one device and a port, supplied explicitly or through
+Devices assigned the same bridge firmware profile share its binary. `bridge build`
+compiles the selected profile once. For a mixed installation, check each device's
+[allowed profiles](#bridge-uploads) before selecting a firmware. USB upload and monitor
+require exactly one device and a port, supplied explicitly or through
 `deploy.bridge.devices`. The device argument selects the endpoint, not its Homie
 identity; provision that identity on the bridge. `bridge diagnose` only observes MQTT,
 using the shared script shipped by a supporting version of `lsh-bridge` and `uv`; it
@@ -168,7 +169,8 @@ list the available names; `doctor` provides the exact regeneration/recheck comma
 
 For development, use `dev local` and `dev release`; both regenerate and build the whole
 default stack. `dev status` reports the mode, and `--no-build` only switches dependency
-overrides. See the [development workflow](./README.md#technical-direction) for details.
+overrides. See the [development workflow](#working-with-local-firmware-libraries) for
+details.
 
 ## Node-RED Import
 
@@ -238,6 +240,14 @@ configuration to stay obvious during bring-up.
 
 ## Examples
 
+These reference TOMLs use
+`../../lsh-core/examples/multi-device-project/lsh_devices.toml` because the examples run
+with sibling checkouts. In a new installation keep its existing
+`[core].devices = "core/lsh_devices.toml"` path. Copy the relevant sections and change
+device and actuator names to match. From the installation root run
+`python lsh-stack.pyz check` and `python lsh-stack.pyz core list`. The default starter
+lists `panel` with the release environment `core_panel`.
+
 Use the smallest file that matches where you are in the bring-up:
 
 - [`examples/lsh_stack.minimal.toml`](./examples/lsh_stack.minimal.toml) only points to
@@ -305,23 +315,11 @@ other_actors_context = "global"
 Durations accept seconds as numbers or strings such as `250ms`, `2s`, `1m` and `1h`.
 Topic bases must end with `/`; concrete publish topics such as `service_topic` must not.
 
-For normal Node-RED GUI usage, keep the flow in Node-RED and use the generated guide for
-the exact `lsh-logic` values:
-
-1. Install `node-red-contrib-lsh-logic` from the Node-RED palette.
-2. Restart Node-RED if requested.
-3. Add one `lsh-logic` node to a flow.
-4. Add standard MQTT input and output nodes and wire them like the
-   `node-red-contrib-lsh-logic` example flow.
-5. Open `generated/node-red-setup.md`, paste the generated `System Config JSON` into the
-   node editor and set the listed fields.
-6. Configure the MQTT broker node manually for your host, credentials and TLS.
-7. Deploy.
-
-This is deliberately a small human step. The generator does not mirror Node-RED editor
-internals or emit a full flow, so changes in the Node-RED node do not force a large
-Python flow renderer rewrite. The raw `node-red-lsh-logic.json` file remains available
-for scripts and advanced tooling.
+For a first deployment, follow [Node-RED Import](#node-red-import). The generated flow
+contains the logic node and its connected MQTT nodes. To keep an existing flow, use the
+settings and wiring reference in `generated/node-red-setup.md` to update its logic node.
+The raw `generated/node-red-lsh-logic.json` is available to scripts. Configure the
+broker host, credentials and TLS in the Node-RED editor.
 
 ## PlatformIO Without Copy-Paste
 
@@ -377,8 +375,8 @@ short environment name, such as `core_j1`. Other profiles append their name, suc
 
 The bridge config uses the maximum required stack limits for `CONFIG_MAX_*` defines,
 such as actuators, buttons, indicators when present and name length. That means
-`bridge_littlefs` is one binary that can run on `c1`, `j1`, `j2` and the other bridge
-devices. Device names are upload targets, not firmware variants.
+`bridge_littlefs` can serve `c1`, `j1` and `j2` when all three use that hardware
+profile. Each device name selects an upload endpoint. The profile selects the image.
 
 Use bridge profiles for firmware variants:
 
@@ -427,6 +425,24 @@ build_flags =
 ```
 
 ## Bridge Uploads
+
+For installations mixing bridge hardware, restrict each device to its compatible
+firmware profiles. The first profile is that device's default:
+
+```toml
+[deploy.bridge.devices.j1]
+profiles = ["pico_littlefs"]
+
+[deploy.bridge.devices.c1]
+profiles = ["littlefs", "littlefs_debug"]
+```
+
+These names refer to `[[platformio.bridge_profiles]]` entries, whose `extends` sections
+define the board, partitions and build flags in `bridge/platformio.ini`. IDE OTA targets
+only list compatible devices. `ota --all` builds once per selected profile and sends
+each binary to its matching devices; an incompatible explicit `--profile` fails before
+building or uploading. Devices without `profiles` retain the unrestricted behavior and
+the stack-wide default.
 
 For the first flash, use PlatformIO Upload on the selected firmware profile:
 
@@ -680,3 +696,26 @@ editor unless that format is stable, documented and worth maintaining.
 
 Home Assistant entities, Zigbee2MQTT topics, dashboards and presentation details remain
 in their own integration layer.
+
+## Working with local firmware libraries
+
+```bash
+lsh-stack dev local
+lsh-stack dev status
+lsh-stack dev release
+```
+
+`local` finds `lsh-core`, `lsh-bridge` and `homie-esp8266` beside the installation; use
+`--repositories-root PATH` for another location. It overrides only the library entries
+in `platformio.local.ini` using `symlink://`, preserving other dependencies and release
+pins. `release` removes these owned overrides and does not require any local repository.
+Both commands discard `.pio` when the mode changes, regenerate the stack and build all
+default firmware; neither uploads anything. `--no-build` only switches dependencies: run
+`setup` afterwards before building from the IDE.
+
+Existing installations must include `platformio.local*.ini` in each project's
+`[platformio].extra_configs`; new starters already do. Ignore those overrides in Git.
+Custom override files are never overwritten or deleted. Remove an explicit `[core].tool`
+pin before using `dev`; the command chooses the matching core tool. Use the checkout's
+`lsh-stack.py` instead of the zipapp only when testing changes to the generator itself;
+local firmware libraries work with either launcher.

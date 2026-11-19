@@ -23,7 +23,7 @@ def interactive_config() -> tuple[str, str]:
         if codec in ("json", "msgpack"):
             break
         sys.stdout.write("Choose json or msgpack.\n")
-    host = input("MQTT broker host/IP (blank: configure OTA later): ").strip()
+    host = input("Broker host/IP for bridge OTA updates (optional; Enter to skip): ").strip()
     stack = STACK_TEMPLATE.replace('codec = "json"', f'codec = "{codec}"')
     if host:
         while True:

@@ -32,13 +32,23 @@ verify every generated controller plus the default bridge firmware:
 python -c "from urllib.request import urlretrieve; urlretrieve('https://github.com/labodj/labo-smart-home/releases/latest/download/lsh-stack.pyz', 'lsh-stack.pyz')"
 python lsh-stack.pyz new my-lsh-installation
 cd my-lsh-installation
-python ../lsh-stack.pyz setup
+python lsh-stack.pyz status
+python lsh-stack.pyz setup
 ```
+
+If you downloaded v0.4.2, `new` suggests `setup` immediately. You can run `status` first
+as shown above. Run `python lsh-stack.pyz --version` to identify your launcher.
+[Guide shipped with v0.4.2](https://github.com/labodj/labo-smart-home/blob/v0.4.2/README.md).
 
 On Windows, use `py` instead of `python` when that is the configured launcher. `setup`
 stops with a concrete error if PlatformIO is unavailable or any firmware fails to build;
 it does not need connected hardware. Git is not used by `lsh-stack` itself, but remains
 necessary for any PlatformIO dependency deliberately declared with a Git URL.
+
+On success the default starter produces `core/.pio/build/core_panel/firmware.hex` and
+`bridge/.pio/build/bridge_littlefs/firmware.bin`. Use the copy of the launcher in the
+installation directory for future commands. To configure a physical device, follow
+[Connect one controller and bridge](./GETTING_STARTED.md#connect-one-controller-and-bridge).
 
 The two files normally edited by an installation owner are `core/lsh_devices.toml` and
 `lsh_stack.toml`. Generated files stay under `generated/`.
@@ -207,130 +217,13 @@ The public stack composer adds the deployment layer on top of that controller pr
 network-click actor targets outside the firmware TOML, while still generating the
 bridge/coordinator contract and exact Node-RED node settings. It also emits PlatformIO
 fragments for per-device controller environments and stack-wide bridge firmware
-profiles, so every bridge device can run the same selected bridge binary while keeping
-device-specific uploads as IDE targets.
+profiles. Bridges assigned the same profile share one binary, with device-specific
+uploads available as IDE targets.
 
-For installations mixing bridge hardware, restrict each device to its compatible
-firmware profiles. The first profile is that device's default:
-
-```toml
-[deploy.bridge.devices.j1]
-profiles = ["pico_littlefs"]
-
-[deploy.bridge.devices.c1]
-profiles = ["littlefs", "littlefs_debug"]
-```
-
-These names refer to `[[platformio.bridge_profiles]]` entries, whose `extends` sections
-define the board, partitions and build flags in `bridge/platformio.ini`. IDE OTA targets
-only list compatible devices. `ota --all` builds once per selected profile and sends
-each binary to its matching devices; an incompatible explicit `--profile` fails before
-building or uploading. Devices without `profiles` retain the unrestricted behavior and
-the stack-wide default.
-
-The normal starting point is the single installation folder shown in
-[Quick Start](#quick-start), with ordinary `core/` and `bridge/` PlatformIO projects
-inside it. Contributors can replace `lsh-stack.pyz` with this checkout's `lsh-stack.py`.
-
-If you only want to evaluate or build `lsh-core` firmware first, create a standalone
-controller project instead of the whole stack:
-
-```bash
-lsh-stack new-core my-lsh-core
-cd my-lsh-core
-platformio run -e core_panel
-```
-
-`new` writes `core/platformio.ini` and `bridge/platformio.ini` once, then leaves those
-manual files alone. If you already have only `lsh_stack.toml` and `lsh_devices.toml`,
-`setup` creates the missing core/bridge PlatformIO shells beside them without
-overwriting existing project files. The `setup` command installs the starter core tools,
-regenerates `generated/`, checks the stack, builds every selected controller with its
-default profile and builds the default wide bridge firmware. The lower-level `generate`
-command still replaces only the files in `generated/` without compiling firmware.
-
-Run `lsh-stack status` whenever you are unsure what has already been generated or which
-command should come next. It does not build firmware or rewrite files. The report
-identifies the running generator version, code path and launcher command, shows
-release/local dependencies for both projects, and flags incomplete switches.
-Device/profile selection errors list valid names; generated-file errors show the
-regeneration and recheck commands.
-
-Controller commands use the device names and profiles from TOML:
-
-```bash
-lsh-stack core list
-lsh-stack core build --all
-lsh-stack core build panel --profile debug
-lsh-stack core clean --all
-lsh-stack core upload panel --port /dev/ttyACM0
-```
-
-Build and clean require explicit names or `--all`. USB upload accepts exactly one
-device, never `--all`. Add `--dry-run` to inspect commands without changing generated
-files or contacting hardware. The core IDE project also exposes
-`LSH Build All Controllers` and `LSH Clean All Controllers` under Custom for each
-profile.
-
-For library development, switching in either direction is one command:
-
-```bash
-lsh-stack dev local
-lsh-stack dev status
-lsh-stack dev release
-```
-
-`local` finds `lsh-core`, `lsh-bridge` and `homie-esp8266` beside the installation; use
-`--repositories-root PATH` for another location. It overrides only the library entries
-in `platformio.local.ini` using `symlink://`, preserving other dependencies and release
-pins. `release` removes these owned overrides and does not require any local repository.
-Both commands discard `.pio` when the mode changes, regenerate the stack and build all
-default firmware; neither uploads anything. `--no-build` only switches dependencies: run
-`setup` afterwards before building from the IDE.
-
-Existing installations must include `platformio.local*.ini` in each project's
-`[platformio].extra_configs`; new starters already do. Ignore those overrides in Git.
-Custom override files are never overwritten or deleted. Remove an explicit `[core].tool`
-pin before using `dev`; the command chooses the matching core tool. Use the checkout's
-`lsh-stack.py` instead of the zipapp only when testing changes to the generator itself;
-local firmware libraries work with either launcher.
-
-Edit `core/lsh_devices.toml` and `lsh_stack.toml`; treat `generated/` as disposable;
-keep persistent manual extensions in `overrides/` or in the `core/` and `bridge/`
-PlatformIO files.
-
-For Node-RED, install `node-red-contrib-lsh-logic` and import
-`generated/node-red-flow.json`. Select your broker in both MQTT nodes, review the
-disabled tab, then enable/deploy it manually. See `generated/node-red-setup.md`.
-
-For bridge builds and uploads, use the generated PlatformIO environments from the IDE or
-CLI. Profile tasks such as `bridge_littlefs` build one wide firmware shared by every
-bridge device. The same profile exposes `LSH OTA j1`, `LSH OTA j2` and `LSH OTA All`
-custom targets for Homie/MQTT OTA in the PlatformIO IDE. For CLI use, the stack command
-can build the default bridge profile and OTA-upload one device, a subset, or every
-bridge:
-
-```bash
-lsh-stack ota j1
-lsh-stack ota j1 j2
-lsh-stack ota j1 --debug
-lsh-stack ota --all
-```
-
-If a prerequisite is missing, the command exits with the install command to run.
-
-`ota` requires a device or explicit `--all`. `--debug` preserves the selected bridge
-family, so the default LittleFS profile selects LittleFS debug, not SPIFFS. Use
-`bridge build`, `bridge upload DEVICE --port PORT`, `bridge monitor DEVICE --port PORT`
-or passive `bridge diagnose DEVICE` for the other bridge operations. Passive diagnostics
-require `uv` and an installed `lsh-bridge` containing `tools/mqtt_diagnostics.py`; the
-command reports the missing prerequisite otherwise.
-
-For assisted creation use `new PROJECT_DIR --interactive`. Commands discover the stack
-from `core/` or `bridge/`, and a release zipapp is copied into newly created
-installations. `status`/`doctor` check generated content as well as missing helpers,
-without building or claiming hardware readiness. See
-[Daily Operations](./STACK_CONFIG.md#daily-operations).
+The [stack configuration reference](./STACK_CONFIG.md) covers per-device bridge
+profiles, Node-RED import, USB and OTA, template updates and switching between registry
+and local libraries. For a small controller-only project run
+`python lsh-stack.pyz new-core my-lsh-core` and build `core_panel` in the new directory.
 
 ## Public History
 

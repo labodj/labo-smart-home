@@ -48,23 +48,10 @@ available only for historical-release compatibility.
 
 ## First Lab Path
 
-For a first end-to-end evaluation, keep the public examples close to the stock
-configuration and change one layer at a time.
-
-1. Skim the [README](./README.md) for the project overview and adoption notes.
-2. Read [REFERENCE_STACK.md](./REFERENCE_STACK.md) for the MQTT, Homie, and runtime
-   model.
-3. Follow [GETTING_STARTED.md](./GETTING_STARTED.md) for the bring-up sequence.
-4. Use the controller example in
-   [`lsh-core`](https://github.com/labodj/lsh-core/tree/main/examples/multi-device-project).
-5. Use the bridge example in
-   [`lsh-bridge`](https://github.com/labodj/lsh-bridge/tree/main/examples/basic-homie-bridge).
-6. Add the headless coordinator or the Node-RED wrapper.
-7. Generate deployment artifacts with [STACK_CONFIG.md](./STACK_CONFIG.md) once the
-   controller profile is stable.
-8. Optionally add a generic Homie discovery package if you want Home Assistant MQTT
-   discovery.
-9. Keep [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) nearby once real traffic starts.
+1. [Compile a starter without hardware](./README.md#quick-start).
+2. [Match the wiring and observe one live controller](./GETTING_STARTED.md#match-the-example-to-your-wiring).
+3. [Choose the headless coordinator or Node-RED](./GETTING_STARTED.md#choose-one-orchestration-runtime).
+4. [Trace an unexpected result](./TROUBLESHOOTING.md#first-60-second-triage).
 
 ## Detailed References
 

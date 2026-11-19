@@ -46,8 +46,11 @@ The stack composer also exposes a slower real firmware smoke test:
 npm run smoke:firmware
 ```
 
-It builds the release zipapp, creates a clean installation, runs `setup` and therefore
-compiles the starter controller and bridge firmware through PlatformIO.
+The smoke test follows the README from a clean directory. It moves the downloaded zipapp
+after project creation, runs the installation's copy, and checks the default controller
+HEX, bridge BIN and generated Homie/MQTT subscriptions. It also takes an interactive
+two-controller project through setup and creates a core-only project. When editing
+onboarding commands, update this test and the generated project guide together.
 
 ## TypeScript Packages
 

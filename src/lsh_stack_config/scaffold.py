@@ -65,7 +65,7 @@ def write_starter(path: Path, *, force: bool, interactive: bool = False) -> int:
         shutil.copy2(archive, local_archive)
     record_templates(load_stack_config(path / "lsh_stack.toml"))
 
-    _print_next_steps(path, command)
+    _print_next_steps(path, command, interactive=interactive)
     return 0
 
 
@@ -241,13 +241,20 @@ def _bridge_project_files(*, bridge_project: Path, generated_dir: Path) -> dict[
     }
 
 
-def _print_next_steps(path: Path, lsh_stack_command: str) -> None:
+def _print_next_steps(path: Path, lsh_stack_command: str, *, interactive: bool) -> None:
     sys.stdout.write(f"created starter LSH project at {path}\n")
+    wiring = (
+        "Named controllers created without I/O assignments."
+        if interactive
+        else "Example wiring: panel.wall_button (A0) toggles panel.light (R0)."
+    )
+    sys.stdout.write(f"{wiring} Edit core/lsh_devices.toml to match your board.\n")
     sys.stdout.write("next commands:\n")
     sys.stdout.write(f"- cd {command_arg(path)}\n")
+    sys.stdout.write(f"- {lsh_stack_command} status\n")
     sys.stdout.write(f"- {lsh_stack_command} setup\n")
     sys.stdout.write(
-        "Setup requires PlatformIO Core in this shell: "
+        "Setup builds locally with PlatformIO Core (CLI or VS Code installation): "
         "https://docs.platformio.org/en/latest/core/installation/\n"
     )
 

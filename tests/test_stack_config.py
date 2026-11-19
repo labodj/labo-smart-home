@@ -1155,7 +1155,7 @@ def test_lsh_stack_new_core_creates_standalone_core_project(tmp_path: Path) -> N
 
     platformio_ini = (project / "platformio.ini").read_text(encoding="utf-8")
     assert "extra_configs = generated/platformio-core.ini" in platformio_ini
-    assert "labodj/lsh-core @ ^4.0.1" in platformio_ini
+    assert "labodj/lsh-core @ ^4.0.2" in platformio_ini
     assert "[env:core_panel]" in platformio_ini
 
     readme = (project / "README.md").read_text(encoding="utf-8")
@@ -1551,10 +1551,10 @@ def test_lsh_stack_setup_materializes_missing_personal_projects(
     assert (core_project / "src" / "main.cpp").is_file()
     assert (core_project / "include" / "lsh_etl_profile_override.h").is_file()
     bridge_ini = (tmp_path / "lsh-bridge-personal" / "platformio.ini").read_text(encoding="utf-8")
-    assert "version = 3" in bridge_ini
+    assert "version = 4" in bridge_ini
     assert "ESP32Async/AsyncTCP @ ^3.5.0" in bridge_ini
-    assert "labodj/homie-v5 @ ^4.1.1" in bridge_ini
-    assert "labodj/lsh-bridge @ ^1.9.0" in bridge_ini
+    assert "labodj/homie-v5 @ ^4.1.3" in bridge_ini
+    assert "labodj/lsh-bridge @ ^1.9.2" in bridge_ini
     assert (tmp_path / "lsh-bridge-personal" / "src" / "main.cpp").is_file()
     assert (stack_project / "overrides" / "README.md").is_file()
     generated_readme = (stack_project / "generated" / "README.generated.md").read_text(

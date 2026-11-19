@@ -53,6 +53,15 @@ Current revisions use more robust connector-based links.
 
 ## Current Panel Snapshot
 
+Follow the signal path in the photograph using this bench reference:
+
+```text
+Button / relay ↔ Controllino Maxi ↔ UART level shifter ↔ ESP32 bridge
+                 5 V logic                              3.3 V logic
+```
+
+Confirm the UART pinout and supply requirements for your board variant before wiring.
+
 The image below shows a current panel from the live installation.
 
 <p>

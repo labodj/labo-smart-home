@@ -39,6 +39,12 @@ computed.
 | `doctor.py`                           | plain-language diagnostics                             |
 | `scaffold.py`                         | starter project file writing                           |
 
+For first-run behavior, follow `wizard.py` (interactive inputs), `scaffold_templates.py`
+(project contents) and `launcher.py` (command paths). For the next action and
+maintenance, follow `status.py`, `development.py` and `template_updates.py`. The
+user-visible contracts are exercised by `tests/test_usability.py`,
+`tests/test_status_ux.py` and the packaged-launcher smoke test.
+
 If a change needs logic from another module, prefer moving a small helper to
 `render_common.py` or `platformio_utils.py` over copy-pasting it.
 

@@ -9,6 +9,10 @@ precisely. For the broader reading map, use [DOCS.md](./DOCS.md).
 
 ## Core Roles
 
+In the starter, pressing `wall_button` changes the local relay `light`. The controller
+reads the button and drives the output; the bridge reports the change over MQTT. A
+coordinator becomes useful when the same button should affect another device.
+
 - **Controller**: the device that handles the real field I/O. In the public reference
   stack this is `lsh-core` running on a Controllino or Arduino-class controller.
 - **Bridge**: the adapter between the controller link and MQTT/Homie. In the public

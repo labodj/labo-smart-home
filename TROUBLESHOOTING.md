@@ -20,7 +20,37 @@ If you only have one minute, use this shortcut:
 - commands reach `IN` but actuators do not move: inspect codec, payload shape, and
   bridge diagnostics
 
+## Setup cannot find a newly released firmware library
+
+If `setup` reports `UnknownPackageError`, check the library name and requested version
+against the [PlatformIO Registry](https://registry.platformio.org/). A machine that
+built an earlier release can still have an old package list. When the requested version
+is already published, retry from the installation directory with a fresh cache. On Linux
+or macOS:
+
+```bash
+PLATFORMIO_CACHE_DIR="$(mktemp -d)" python lsh-stack.pyz setup
+```
+
+This retry may download packages again. It keeps your project settings and existing
+PlatformIO cache.
+
 ## Healthy First-Lab Baseline
+
+With the default device `panel`, watch `homie/5/panel/$state` and `LSH/panel/#` in an
+MQTT client with read access. For a live service reply on `LSH/panel/bridge`, read the
+two fields together:
+
+| Observation                              | Next check                                                                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `controller_connected=false`             | Check controller power, UART pins, level shifting, baud and the serial codec.                                                     |
+| Connected, `runtime_synchronized=false`  | Watch for a fresh `conf` followed by `state`; compare the bridge capacities with the announced topology.                          |
+| Both true, a network click has no effect | Follow REQUEST on `events`, ACK on `IN` and CONFIRM on `events`. Check the button ID, click type and correlation ID on all three. |
+
+For a passive diagnostic session use `python lsh-stack.pyz bridge diagnose panel` from
+the installation root. It listens for 30 seconds and needs `uv`, a bridge package
+containing the diagnostic tool, and broker settings in `[deploy.bridge.ota]`. You can
+also use an MQTT client with the steps below.
 
 In a healthy first bring-up, you should be able to observe all of these:
 
@@ -33,6 +63,48 @@ In a healthy first bring-up, you should be able to observe all of these:
 
 If one of those layers is missing, the symptom usually already tells you where to look
 first.
+
+## Send a service ping
+
+Subscribe to `LSH/panel/bridge` **before** sending the ping. In another MQTT client,
+publish `{"p":5}` to `LSH/Node-RED/SRV` with QoS 1 and retain off for the default JSON
+starter. This checks all listening bridges. Each replies on its own topic. Replace
+`panel` and the topic roots if you changed them.
+
+With Mosquitto clients these are two separate terminals. Replace `localhost` with your
+broker and use its usual authentication and TLS settings in both terminals.
+
+```bash
+mosquitto_sub -h localhost -t 'LSH/panel/bridge' -q 1 -R -W 30 -v
+```
+
+```bash
+mosquitto_pub -h localhost -t 'LSH/Node-RED/SRV' -q 1 -m '{"p":5}'
+```
+
+A synchronized bridge replies with a message like this:
+
+```json
+{
+  "event": "service_ping_reply",
+  "controller_connected": true,
+  "runtime_synchronized": true,
+  "bootstrap_phase": "synced"
+}
+```
+
+For a stack configured with MQTT MsgPack, send the binary bytes `81 a1 70 05` on the
+same topic. On a POSIX shell use the command below and view the reply in a client with
+MsgPack decoding.
+
+```bash
+python -c "import sys; sys.stdout.buffer.write(bytes.fromhex('81 a1 70 05'))" | mosquitto_pub -h localhost -t 'LSH/Node-RED/SRV' -q 1 -s
+```
+
+If the subscription times out, check broker, topic, permissions and MQTT codec first. A
+reply with `controller_connected=false` confirms the bridge answered and points the next
+check to the UART. A reply with `runtime_synchronized=false` calls for a fresh topology
+and state. Retained `conf` and `state` alone cannot answer this check.
 
 ## Where to Observe the Stack
 

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-TEMPLATE_VERSION = 3
+TEMPLATE_VERSION = 4
+CORE_BASELINE = "4.0.2"
 
-STACK_TEMPLATE = """#:schema https://raw.githubusercontent.com/labodj/labo-smart-home/main/schemas/lsh_stack.schema.json
+STACK_TEMPLATE = (
+    "#:schema https://raw.githubusercontent.com/labodj/labo-smart-home/"
+    "17ca7c95b3dd6a409ebd15448ed66c432d8c377e/schemas/lsh_stack.schema.json"
+    """
 
 schema_version = 1
 
@@ -94,8 +98,11 @@ default_method = "usb"
 # type = "long"
 # actors = [{ device = "panel", actuators = ["light"] }]
 """
+)
 
-DEVICES_TEMPLATE = """#:schema https://raw.githubusercontent.com/labodj/lsh-core/main/docs/lsh_devices.schema.json
+DEVICES_TEMPLATE = (
+    f"#:schema https://raw.githubusercontent.com/labodj/lsh-core/v{CORE_BASELINE}/docs/lsh_devices.schema.json"
+    """
 
 schema_version = 2
 preset = "controllino-maxi/fast-msgpack"
@@ -123,6 +130,7 @@ short = "light"
 # Uncomment together with [[network_clicks]] in ../lsh_stack.toml.
 # long = { network = true, fallback = "do_nothing" }
 """
+)
 
 CORE_PLATFORMIO_TEMPLATE = f"""[lsh_stack_template]
 kind = core-controllino-maxi
@@ -142,7 +150,7 @@ framework = arduino
 board = controllino_maxi
 monitor_speed = 500000
 lib_deps =
-    labodj/lsh-core @ ^4.0.1
+    labodj/lsh-core @ ^{CORE_BASELINE}
     controllino-plc/CONTROLLINO
 lib_ldf_mode = deep+
 lib_compat_mode = strict
@@ -232,8 +240,8 @@ lib_ldf_mode = deep
 lib_compat_mode = strict
 lib_deps =
     ESP32Async/AsyncTCP @ ^3.5.0
-    labodj/homie-v5 @ ^4.1.1
-    labodj/lsh-bridge @ ^1.9.0
+    labodj/homie-v5 @ ^4.1.3
+    labodj/lsh-bridge @ ^1.9.2
 build_unflags =
     -std=gnu++11 -std=gnu++17 -std=gnu++20 -std=gnu++23
 build_flags =
@@ -557,7 +565,9 @@ Do not edit files under `generated/`; they are recreated from the TOML files.
 
 ## First Setup
 
-Check the device names and actual I/O pins in `core/lsh_devices.toml` first.
+The standard starter includes an A0 wall button and an R0 relay. Interactive projects
+start with named controllers and empty I/O lists. Check your device names and actual
+wiring in `core/lsh_devices.toml` before connecting hardware.
 Then run setup from this folder:
 
 ```bash
@@ -567,7 +577,12 @@ Then run setup from this folder:
 It creates missing core/bridge project files, generates and checks `generated/`, then
 uses the PlatformIO CLI to build every selected controller and the default bridge
 firmware. Success means the complete default firmware set compiled.
-Nothing is flashed. PlatformIO installed by the VSCode extension is detected automatically.
+Look for `core/.pio/build/core_<device>/firmware.hex` and, with the default bridge
+profile, `bridge/.pio/build/bridge_littlefs/firmware.bin`. Setup builds locally.
+PlatformIO installed by the VS Code extension is detected automatically.
+For the physical bring-up, see the USB instructions in `generated/README.generated.md`.
+Watch your Homie device's `$state` and a fresh `LSH/<device>/bridge` service reply
+with `controller_connected=true` and `runtime_synchronized=true`.
 
 When you are unsure what is already done, ask for the next action:
 

@@ -24,6 +24,28 @@ python "$archive" --version
 python "$archive" --help
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
+# Run the README path using the archive built from this checkout.
+cp "$archive" "$tmpdir/lsh-stack.pyz"
+(
+  cd "$tmpdir"
+  python lsh-stack.pyz new my-lsh-installation
+  cd my-lsh-installation
+  mv ../lsh-stack.pyz ../download-moved.pyz
+  python lsh-stack.pyz status
+  python lsh-stack.pyz setup
+  test -s core/.pio/build/core_panel/firmware.hex
+  test -s bridge/.pio/build/bridge_littlefs/firmware.bin
+  python lsh-stack.pyz explain panel
+  python - <<'PY'
+import json
+from pathlib import Path
+
+export = json.loads(Path("generated/lsh-stack-config.json").read_text())
+topics = export["coordinator"]["subscriptions"]
+assert {"homie/5/panel/$state", "LSH/panel/bridge", "LSH/panel/conf", "LSH/panel/state"} <= topics.keys()
+PY
+)
+
 printf 'y\nsalotto,cucina\njson\n\n' | python "$archive" new "$tmpdir/installation" --interactive
 grep -F "lsh-stack.pyz setup" "$tmpdir/installation/README.md"
 if python "$archive" new "$tmpdir/legacy.toml"; then

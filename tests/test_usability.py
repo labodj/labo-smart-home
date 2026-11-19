@@ -10,7 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from lsh_stack_config import cli, cli_runtime, operations, scaffold, status, template_updates
+from lsh_stack_config import (
+    cli,
+    cli_runtime,
+    operations,
+    scaffold,
+    status,
+    template_updates,
+)
 from lsh_stack_config.composer import compose_stack
 from lsh_stack_config.deploy import render_bridge_ota_config
 from lsh_stack_config.errors import StackConfigError
@@ -584,3 +591,32 @@ def test_invalid_device_profiles_are_rejected(
     )
     with pytest.raises(StackConfigError):
         compose_stack(load_stack_config(config.path), _core_export())
+
+
+def test_release_starter_wiring_and_schema_hints(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Match the starter's guidance and editor schemas to its installed releases."""
+    root = tmp_path / "installation"
+    assert cli.main(["new", str(root)]) == 0
+    output = capsys.readouterr().out
+    assert "wall_button (A0)" in output
+    assert "light (R0)" in output
+    assert "VS Code" in output
+    assert (
+        (root / "lsh_stack.toml")
+        .read_text()
+        .splitlines()[0]
+        .endswith("/17ca7c95b3dd6a409ebd15448ed66c432d8c377e/schemas/lsh_stack.schema.json")
+    )
+    core_ini = (root / "core/platformio.ini").read_text()
+    core_baseline = next(
+        line.split("^")[1].strip()
+        for line in core_ini.splitlines()
+        if "labodj/lsh-core @ ^" in line
+    )
+    devices = (root / "core/lsh_devices.toml").read_text()
+    assert f"/v{core_baseline}/docs/" in devices.splitlines()[0]
+    panel = tomllib.loads(devices)["devices"]["panel"]
+    assert panel["buttons"]["wall_button"] == {"id": 1, "pin": "A0", "short": "light"}
+    assert panel["actuators"]["light"]["pin"] == "R0"
